@@ -1,0 +1,8 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <NMicaToolsRootPath Condition=" '$(NMicaToolsRootPath)' == '' ">$(MSBuildThisFileDirectory)</NMicaToolsRootPath>
+        <NMicaToolsSubPath Condition=" '$(MSBuildRuntimeType)' == 'Core' ">..\tasks\netstandard2.0\</NMicaToolsSubPath>
+        <NMicaToolsSubPath Condition=" '$(MSBuildRuntimeType)' != 'Core' ">..\tasks\net472\</NMicaToolsSubPath>
+        <NMicaToolsPath Condition=" '$(NMicaToolsPath)' == '' ">$(NMicaToolsRootPath)$(NMicaToolsSubPath)NMica.dll</NMicaToolsPath>
+    </PropertyGroup>
+</Project>
