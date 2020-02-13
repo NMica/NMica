@@ -7,7 +7,7 @@
           <PublishLayer TargetFrameworkMoniker="$(TargetFrameworkMoniker)" 
                     BaseIntermediateOutputPath="$(BaseIntermediateOutputPath)"
                     PublishDir="$(PublishDir)"
-                    NMicaLayer="$(NMicaLayer)"
+                    DockerLayer="$(DockerLayer)"
           />
       </Target>
       <Target Name="CleanPublish" BeforeTargets="Build" Condition="'$(NMicaLayer)'!=''">

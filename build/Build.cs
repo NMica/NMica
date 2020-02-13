@@ -116,7 +116,10 @@ class Build : NukeBuild
         .DependsOn(Publish, CleanNugetCache)
         .Executes(() =>
         {
-            var samplesSolution = Solution.Directory / "Samples" / "MultiProjectWebApp" / "MultiProjectWebApp.sln";
+            var samplesSolutionDir = Solution.Directory / "Samples" / "MultiProjectWebApp";
+            EnsureCleanDirectory(samplesSolutionDir / "nuget");
+            CopyDirectoryRecursively(ArtifactsDirectory, samplesSolutionDir / "nuget", DirectoryExistsPolicy.Merge);
+            var samplesSolution = samplesSolutionDir / "MultiProjectWebApp.sln";
             var output = DotNetBuild(_ => _
                 .SetProjectFile(samplesSolution)
                 .SetConfiguration(Configuration));

@@ -17,6 +17,7 @@ namespace Backend
     {
         public Startup(IConfiguration configuration)
         {
+            Console.WriteLine("test");
             Configuration = configuration;
         }
 
