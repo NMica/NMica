@@ -31,7 +31,7 @@ namespace NMica.Tasks
             // var root = doc.RootElement;
             var targets = doc["targets"];
             var framework = targets[TargetFrameworkMoniker];
-            var originalFiles = Directory.EnumerateFiles(PublishDir, string.Empty, SearchOption.AllDirectories)
+            var originalFiles = Directory.EnumerateFiles(Path.Combine(Directory.GetCurrentDirectory(), PublishDir), "*", SearchOption.AllDirectories)
                 .ToList();
             var publishPath = Path.GetFullPath(PublishDir);
             if (_layer == Layer.All)

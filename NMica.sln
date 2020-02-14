@@ -1,0 +1,37 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NMica", "src\NMica\NMica.csproj", "{35F15F99-E0F7-43DD-BE8C-A53DE2DDAEDC}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "_build", "build\_build.csproj", "{01107BEB-DC9C-41AC-86F6-CD49FDE774AA}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{8C73AE5F-E609-4F13-8F6D-B958994828BF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NMica.Tests", "tests\NMica.Tests\NMica.Tests.csproj", "{EFE119B0-B96F-4FFD-9975-E44BE265BA16}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{176F10B7-9B7F-43AE-B616-325108546040}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "build", "build", "{4A589623-5549-45BE-8CD9-149FCDCA0239}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{01107BEB-DC9C-41AC-86F6-CD49FDE774AA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{01107BEB-DC9C-41AC-86F6-CD49FDE774AA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{35F15F99-E0F7-43DD-BE8C-A53DE2DDAEDC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{35F15F99-E0F7-43DD-BE8C-A53DE2DDAEDC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{35F15F99-E0F7-43DD-BE8C-A53DE2DDAEDC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{35F15F99-E0F7-43DD-BE8C-A53DE2DDAEDC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EFE119B0-B96F-4FFD-9975-E44BE265BA16}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EFE119B0-B96F-4FFD-9975-E44BE265BA16}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EFE119B0-B96F-4FFD-9975-E44BE265BA16}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EFE119B0-B96F-4FFD-9975-E44BE265BA16}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{35F15F99-E0F7-43DD-BE8C-A53DE2DDAEDC} = {8C73AE5F-E609-4F13-8F6D-B958994828BF}
+		{EFE119B0-B96F-4FFD-9975-E44BE265BA16} = {176F10B7-9B7F-43AE-B616-325108546040}
+		{01107BEB-DC9C-41AC-86F6-CD49FDE774AA} = {4A589623-5549-45BE-8CD9-149FCDCA0239}
+	EndGlobalSection
+EndGlobal

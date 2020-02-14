@@ -7,9 +7,8 @@
     <owners>Andrew Stakhov</owners>
     <licenseUrl>http://github.com/NMica/NMica/blob/master/LICENSE</licenseUrl>
     <projectUrl>http://github.com/NMica/NMica</projectUrl>
-<!--    <iconUrl>http://ICON_URL_HERE_OR_DELETE_THIS_LINE</iconUrl>-->
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
-    <description>Simplify running .NET apps in container environments</description>
+    <description>Automates Dockerfile generation for .NET Core projects</description>
     <copyright>Copyright 2020</copyright>
   </metadata>
 </package>

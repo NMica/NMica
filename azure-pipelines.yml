@@ -1,0 +1,13 @@
+pool:
+  vmImage: windows-latest
+variables:
+  NUGET_PACKAGES: $(Pipeline.Workspace)/.nuget/packages
+jobs:
+  - job: CI
+    displayName: 'Build and Test'
+    steps:
+      - script: '.\build.cmd CI'
+        displayName: Call Nuke CI Target
+      - publish: artifacts
+        artifact: nuget
+        displayName: Publish Nuget package

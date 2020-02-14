@@ -4,5 +4,8 @@
         <NMicaToolsSubPath Condition=" '$(MSBuildRuntimeType)' == 'Core' ">..\tasks\netstandard2.0\</NMicaToolsSubPath>
         <NMicaToolsSubPath Condition=" '$(MSBuildRuntimeType)' != 'Core' ">..\tasks\net472\</NMicaToolsSubPath>
         <NMicaToolsPath Condition=" '$(NMicaToolsPath)' == '' ">$(NMicaToolsRootPath)$(NMicaToolsSubPath)NMica.dll</NMicaToolsPath>
+        <GenerateDockerfile Condition="'$(GenerateDockerfile)' == ''">True</GenerateDockerfile>
+ 
     </PropertyGroup>
+    
 </Project>

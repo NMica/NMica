@@ -1,19 +1,34 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-
+    <PropertyGroup>
+        <NMicaSupportedProject Condition="
+                '$(_IsExecutable)' != '' AND
+                '$(TargetFrameworkIdentifier)'=='.NETCoreApp'  AND  
+                '$(TargetFrameworkVersion)'!='v1.0' AND 
+                '$(TargetFrameworkVersion)'!='v1.1' AND 
+                '$(TargetFrameworkVersion)'!='v2.0' AND 
+                '$(TargetFrameworkVersion)'!='v2.2' AND 
+                '$(TargetFrameworkVersion)'!='v3.0' "
+        >True</NMicaSupportedProject>
+        <NMicaSupportedProject Condition="'$(NMicaSupportedProject)'==''">False</NMicaSupportedProject>
+    </PropertyGroup>
       <UsingTask TaskName="NMica.Tasks.PublishLayer" AssemblyFile="$(NMicaToolsPath)" />
       <UsingTask TaskName="NMica.Tasks.GenerateDockerfile" AssemblyFile="$(NMicaToolsPath)" />
       <UsingTask TaskName="NMica.Tasks.CleanPublishDir" AssemblyFile="$(NMicaToolsPath)" />
-      <Target Name="PublishLayer" DependsOnTargets="Publish;CleanPublish">
+      <Target Name="PublishLayer" DependsOnTargets="Publish;CleanPublish" Condition="'$(NMicaSupportedProject)' ">
           <PublishLayer TargetFrameworkMoniker="$(TargetFrameworkMoniker)" 
                     BaseIntermediateOutputPath="$(BaseIntermediateOutputPath)"
-                    PublishDir="$(PublishDir)"
+                    PublishDir="$(PublishDir)" 
                     DockerLayer="$(DockerLayer)"
           />
       </Target>
-      <Target Name="CleanPublish" BeforeTargets="Build" Condition="'$(NMicaLayer)'!=''">
+      <Target Name="CleanPublish" BeforeTargets="Build" Condition="'$(NMicaSupportedProject)' AND '$(DockerLayer)'!=''">
           <CleanPublishDir PublishDir="$(PublishDir)" />
       </Target>
-      <Target Name="GenerateNMicafile" AfterTargets="Build" Condition="'$(NMicaLayer)'==''">
+      <Target Name="GenerateDockerfile" AfterTargets="Build" Condition="
+        '$(GenerateDockerfile)' AND 
+        '$(NMicaSupportedProject)' AND
+        '$(SolutionPath)' != '' AND 
+        '$(SolutionPath)' != '*Undefined*'">
           <GenerateDockerfile 
                   UsingMicrosoftNETSdkWeb="$(UsingMicrosoftNETSdkWeb)"
                   TargetFrameworkVersion="$(TargetFrameworkVersion)"

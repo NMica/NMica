@@ -1,21 +1,18 @@
 using System;
 using System.Diagnostics;
-using System.IO;
 using System.Linq;
 using Nuke.Common;
 using Nuke.Common.Execution;
-using Nuke.Common.Git;
 using Nuke.Common.IO;
 using Nuke.Common.ProjectModel;
 using Nuke.Common.Tooling;
+using Nuke.Common.Tools.Docker;
 using Nuke.Common.Tools.DotNet;
-using Nuke.Common.Tools.GitVersion;
 using Nuke.Common.Tools.MSBuild;
-using Nuke.Common.Tools.NuGet;
+using Nuke.Common.Tools.NerdbankGitVersioning;
+using static Nuke.Common.Tools.NerdbankGitVersioning.NerdbankGitVersioningTasks;
 using Nuke.Common.Utilities.Collections;
-using static Nuke.Common.EnvironmentInfo;
 using static Nuke.Common.IO.FileSystemTasks;
-using static Nuke.Common.IO.PathConstruction;
 using static Nuke.Common.Tools.DotNet.DotNetTasks;
 using static Nuke.Common.Tools.MSBuild.MSBuildTasks;
 using static Nuke.Common.ControlFlow;
@@ -35,22 +32,30 @@ class Build : NukeBuild
     [Parameter("Configuration to build - Default is 'Debug' (local) or 'Release' (server)")]
     readonly Configuration Configuration = IsLocalBuild ? Configuration.Debug : Configuration.Release;
 
+    [Parameter("Framework to build against - netstandard2.0 or net472")]
+    readonly string Framework;
+    
     [Solution] readonly Solution Solution;
-    // [GitRepository] readonly GitRepository GitRepository;
-    // [GitVersion] readonly GitVersion GitVersion;
-
-
+    
     AbsolutePath SourceDirectory => RootDirectory / "src";
     AbsolutePath TestsDirectory => RootDirectory / "tests";
     AbsolutePath ArtifactsDirectory => RootDirectory / "artifacts";
+    AbsolutePath SamplesSolutionDir => Solution.Directory / "Samples" / "MultiProjectWebApp";
+
+    [Parameter("Determines if release branch will have pre-release tags applied to it. Default is false, meaning when cutting new version it is considered final (stable) package")]
+    readonly bool IsPreRelease = false;
+    [Parameter("Nuget ApiKey required in order to push packages")]
+    string ApiKey;
 
     string NMicaProject => Solution.GetProject("NMica").Path;
-    string Version { get; set; } = "local";
-    
+
+    [NerdbankGitVersioning] readonly NerdbankGitVersioning GitVersion;
+
     Target Clean => _ => _
         .Before(Restore)
         .Executes(() =>
         {
+            
             SourceDirectory.GlobDirectories("**/bin", "**/obj").ForEach(DeleteDirectory);
             TestsDirectory.GlobDirectories("**/bin", "**/obj").ForEach(DeleteDirectory);
             EnsureCleanDirectory(ArtifactsDirectory);
@@ -69,12 +74,14 @@ class Build : NukeBuild
         {
             DotNetBuild(_ => _
                 .SetProjectFile(Solution)
+                .SetFramework(Framework)
                 .SetConfiguration(Configuration)
                 .EnableNoRestore());
         });
 
     Target Publish => _ => _
-        .DependsOn(Compile)
+        .DependsOn(Clean,Compile)
+        .Description("Creates nuget package in artifacts directory")
         .Executes(() =>
         {
             
@@ -86,12 +93,24 @@ class Build : NukeBuild
             CopyDirectoryRecursively(dockerProject / "nuget", TemporaryDirectory, DirectoryExistsPolicy.Merge);
             CopyDirectoryRecursively(dockerCompileDir, TemporaryDirectory / "tasks");
 
-            // var buildName = $"NMica-dev{DateTime.Now:yyyyMMddhhmmss}";
-            NuGetTasks.NuGetPack(c => c
-                .SetTargetPath(TemporaryDirectory / "NMica.nuspec")
-                .SetNoPackageAnalysis(true)
-                .SetVersion("1.0.0-local")
-                .SetOutputDirectory(ArtifactsDirectory));
+            DotNetPack(_ => _
+                    .SetProject(Solution.Path)
+                    .DisableRunCodeAnalysis()
+                    .AddProperty("NuspecFile", TemporaryDirectory / "NMica.nuspec")
+                    .AddProperty("NoPackageAnalysis", true)
+                    .AddProperty("NuspecProperties", $"version={GitVersion.NuGetPackageVersion}")
+                    .SetOutputDirectory(ArtifactsDirectory));
+        });
+
+    Target Release => _ => _
+        .After(Publish,Test)
+        .OnlyWhenDynamic(() => string.IsNullOrEmpty(GitVersion.PrereleaseVersion)) // we don't publish non final releases to nuget.org - prerelease builds are available on azure artifacts feed
+        .Executes(() =>
+        {
+            DotNetNuGetPush(_ => _
+                .SetSource("https://api.nuget.org/v3/index.json")
+                .SetTargetPath(ArtifactsDirectory / $"NMica.{GitVersion.NuGetPackageVersion}.nupkg")
+                .SetApiKey(ApiKey));
         });
 
     Target CleanNugetCache => _ => _
@@ -110,24 +129,27 @@ class Build : NukeBuild
             var userFolder = (AbsolutePath) Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             var nugetCacheFolder = userFolder / ".nuget" / "packages";
             DeleteDirectory(nugetCacheFolder / "NMica");
+            
         });
+    
 
     Target Test => _ => _
-        .DependsOn(Publish, CleanNugetCache)
+        .After(Publish)
+        .Description("Executes test suite. Requires Docker")
         .Executes(() =>
         {
-            var samplesSolutionDir = Solution.Directory / "Samples" / "MultiProjectWebApp";
-            EnsureCleanDirectory(samplesSolutionDir / "nuget");
-            CopyDirectoryRecursively(ArtifactsDirectory, samplesSolutionDir / "nuget", DirectoryExistsPolicy.Merge);
-            var samplesSolution = samplesSolutionDir / "MultiProjectWebApp.sln";
-            var output = DotNetBuild(_ => _
-                .SetProjectFile(samplesSolution)
-                .SetConfiguration(Configuration));
-            Assert(output.Select(x => x.Text).Any(x => x.Contains("Generated Dockerfile")), "Building with `dotnet build` didn't executed expected target");
-            MSBuild(_ => _
-                .SetProjectFile(samplesSolution)
-                .SetConfiguration(Configuration));
-            Assert(output.Select(x => x.Text).Any(x => x.Contains("Generated Dockerfile")), "Building with `MSBuild` didn't executed expected target");
+            var testProject = RootDirectory / "tests" / "NMica.Tests" / "NMica.Tests.csproj";
+            DotNetTest(_ => _
+                .SetProjectFile(testProject)
+                .SetWorkingDirectory(testProject.Parent));
         });
 
+    Target CutReleaseBranch => _ => _
+        .Executes(() => NerdbankGitVersioningPrepareRelease(_ => _
+            .SetTag(IsPreRelease ? "beta" : null)));
+
+    Target CI => _ => _
+        .Unlisted()
+        .Triggers(Publish, Test, Release)
+        .Executes(() => NerdbankGitVersioningCloud());
 }
