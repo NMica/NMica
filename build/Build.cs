@@ -146,6 +146,7 @@ class Build : NukeBuild
 
     Target CutReleaseBranch => _ => _
         .Executes(() => NerdbankGitVersioningPrepareRelease(_ => _
+            .SetWorkingDirectory(RootDirectory)
             .SetTag(IsPreRelease ? "beta" : null)));
 
     Target CI => _ => _

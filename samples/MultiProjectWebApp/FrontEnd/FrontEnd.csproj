@@ -4,7 +4,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="NMica" Version="1.0.0" />
+    <PackageReference Include="NMica" Version="1.0.3" />
     <PackageReference Include="Steeltoe.Management.CloudFoundryCore" Version="2.4.1" />
   </ItemGroup>
 
