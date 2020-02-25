@@ -9,7 +9,7 @@ jobs:
       - script: '.\build.cmd CI'
         displayName: Call Nuke CI Target
         env:
-          ApiKey: $(ApiKey)
+          NugetApiKey: $(NugetApiKey)
       - publish: artifacts
         artifact: nuget
         displayName: Publish Nuget package
