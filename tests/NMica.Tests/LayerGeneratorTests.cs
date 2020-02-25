@@ -85,6 +85,7 @@ namespace NMica.Tests
                 dockerFilesGenerated.Should().BeEmpty();
             });
         }
+
         [Fact]
         public void PublishLayer_ComplexSolution_LayersGenerated()
         {
@@ -96,17 +97,19 @@ namespace NMica.Tests
                     new Project
                     {
                         Name = "app1",
+                        // SlnRelativeDir = ".",
                         Sdk = Sdks.Microsoft_NET_Sdk,
                         PropertyGroup = {OutputType = "exe", TargetFramework = "netcoreapp3.1"},
                     },
                     new Project()
                     {
                         Name = "classlib",
+                        // SlnRelativeDir = ".",
                         Sdk = Sdks.Microsoft_NET_Sdk,
                         PropertyGroup = {TargetFramework = "netcoreapp3.1"},
                     }
                 }
-            }.Generate(_testDir, true);
+            }.Generate(_testDir);
             var projectFile = projects
                 .Where(x => x.Value.Name == "app1")
                 .Select(x => x.Key)
@@ -117,6 +120,7 @@ namespace NMica.Tests
             DotNet($@"add {projectFile} package Newtonsoft.Json -v 12.0.1 ");
             DotNetRestore(_ => _
                 .SetProjectFile(projectFile));
+            
             var cliPublishDir = _testDir / "cli-layers";
             DotNet($"msbuild /t:PublishLayer /p:PublishDir={cliPublishDir} /p:DockerLayer=All {projectFile} /p:GenerateDockerfile=False");
             AssertLayers(cliPublishDir);
@@ -156,27 +160,49 @@ namespace NMica.Tests
 
         public static IEnumerable<object[]> GetBasicSupportedProjects()
         {
-            yield return MakeSolution(Sdks.Microsoft_NET_Sdk, "netcoreapp2.1");
-            yield return MakeSolution(Sdks.Microsoft_NET_Sdk, "netcoreapp3.1");
-            yield return MakeSolution(Sdks.Microsoft_NET_Sdk_Web, "netcoreapp2.1");
-            yield return MakeSolution(Sdks.Microsoft_NET_Sdk_Web, "netcoreapp3.1");
+            yield return MakeSolution("netcoreapp2.1 Microsoft_NET_Sdk", Sdks.Microsoft_NET_Sdk, "netcoreapp2.1");
+            yield return MakeSolution("netcoreapp3.1 Microsoft_NET_Sdk", Sdks.Microsoft_NET_Sdk, "netcoreapp3.1");
+            yield return MakeSolution("netcoreapp2.1 Microsoft_NET_Sdk_Web", Sdks.Microsoft_NET_Sdk_Web, "netcoreapp2.1");
+            yield return MakeSolution("netcoreapp3.1 Microsoft_NET_Sdk_Web", Sdks.Microsoft_NET_Sdk_Web, "netcoreapp3.1");
+            yield return new[]
+            {
+                new SolutionConfiguration
+                {
+                    Description = "project folder has spaces",
+                    NugetConfig = new NugetConfiguration().Add("artifacts", "artifacts"),
+                    Projects =
+                    {
+                        new Project
+                        {
+                            Name = "app1",
+                            SlnRelativeDir = "app 1",
+                            Sdk = Sdks.Microsoft_NET_Sdk,
+                            PropertyGroup = {OutputType = "exe", TargetFramework = "netcoreapp3.1"},
+                            ItemGroup = {PackageReference.NMica}
+                        }
+                    }
+                }
+            };
         }
+
+  
 
         public static IEnumerable<object[]> GetBasicUnsupportedProjects()
         {
-            yield return MakeSolution(Sdks.Microsoft_NET_Sdk, "net472");
-            yield return MakeSolution(Sdks.Microsoft_NET_Sdk, "netcoreapp2.0");
-            yield return MakeSolution(Sdks.Microsoft_NET_Sdk, "netcoreapp2.2");
-            yield return MakeSolution(Sdks.Microsoft_NET_Sdk, "netcoreapp3.0");
-            yield return MakeSolution(Sdks.Microsoft_NET_Sdk, "netcoreapp3.1", outputType: "Library");
+            yield return MakeSolution("net472", Sdks.Microsoft_NET_Sdk, "net472");
+            yield return MakeSolution("netcoreapp2.0", Sdks.Microsoft_NET_Sdk, "netcoreapp2.0");
+            yield return MakeSolution("netcoreapp2.2", Sdks.Microsoft_NET_Sdk, "netcoreapp2.2");
+            yield return MakeSolution("netcoreapp3.0", Sdks.Microsoft_NET_Sdk, "netcoreapp3.0");
+            yield return MakeSolution("netcoreapp3.1, outputType=Library", Sdks.Microsoft_NET_Sdk, "netcoreapp3.1", outputType: "Library");
         }
 
-        static object[] MakeSolution(string sdk, string targetFramework, string outputType = "exe")
+        static object[] MakeSolution(string description, string sdk, string targetFramework, string outputType = "exe")
         {
             return new object[]
             {
                 new SolutionConfiguration
                 {
+                    Description = description,
                     NugetConfig = new NugetConfiguration().Add("artifacts", "artifacts"),
                     Projects =
                     {

@@ -33,11 +33,11 @@
                   UsingMicrosoftNETSdkWeb="$(UsingMicrosoftNETSdkWeb)"
                   TargetFrameworkVersion="$(TargetFrameworkVersion)"
                   TargetFrameworkIdentifier="$(TargetFrameworkIdentifier)"
-                  IsExecutable="$(_IsExecutable)"
-                  SolutionPath="$(SolutionPath)"
-                  MSBuildProjectName="$(MSBuildProjectName)"
-                  MSBuildProjectFile="$(MSBuildProjectFile)"
                   AssemblyName="$(AssemblyName)"
+                  MSBuildProjectFullPath="$(MSBuildProjectFullPath)"
+                  BaseIntermediateOutputPath="$(BaseIntermediateOutputPath)"
+                  SolutionPath="$(SolutionPath)"
+                  IsExecutable="$(_IsExecutable)"
           />
       </Target>
 </Project>

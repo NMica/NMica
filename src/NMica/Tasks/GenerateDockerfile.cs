@@ -7,7 +7,9 @@ using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.XPath;
 using Microsoft.Build.Framework;
+using Newtonsoft.Json.Linq;
 using NMica.Tasks.Base;
+using Nuke.Common.IO;
 
 namespace NMica.Tasks
 {
@@ -17,8 +19,8 @@ namespace NMica.Tasks
         public string TargetFrameworkVersion { get; set; }
         public string TargetFrameworkIdentifier { get; set; }
         public string AssemblyName { get; set; }
-        public string MSBuildProjectName { get; set; }
-        public string MSBuildProjectFile { get; set; }
+        public string MSBuildProjectFullPath { get; set; }
+        public string BaseIntermediateOutputPath { get; set; }
         public string SolutionPath { get; set; }
         public bool IsExecutable { get; set; }
 
@@ -55,79 +57,87 @@ namespace NMica.Tasks
                 Log.LogWarning($"Unsupported version: project is targeting .NET Core {TargetFrameworkVersion} which is end of life.");
                 return true;
             }
-            var solution = File.ReadAllText(SolutionPath);
-            var solutionFilename = Path.GetFileName(SolutionPath);
-            var solutionFullDir = Path.GetDirectoryName(SolutionPath);
-            var projects = Regex.Matches(solution, @"^Project\(.+\)\s*=\s*\"".+?\"",\s*""(?<project>[^\""]+)", RegexOptions.Multiline).Cast<Match>()
-                .Select(x => x.Groups["project"].Value)
-                .ToList();
-            
-            var currentProject = projects.First(x => Path.GetFileName(x) == MSBuildProjectFile);
-            
-            string runImageName = UsingMicrosoftNETSdkWeb ? "mcr.microsoft.com/dotnet/core/aspnet" : "mcr.microsoft.com/dotnet/core/runtime";
+            var solutionFullPath = (AbsolutePath)SolutionPath;
+			var solutionFullDir = solutionFullPath.Parent;
+			var currentProjectFullPath = (AbsolutePath)MSBuildProjectFullPath;
+			var currentProjectFullDir = currentProjectFullPath.Parent;
 
-            var sb = new StringBuilder();
-            sb.AppendLine($"FROM mcr.microsoft.com/dotnet/core/sdk:{imageVersion} AS build");
-            sb.AppendLine("WORKDIR src");
-            var projectNugetConfigs = projects.Union(new[] {SolutionPath})
-                .SelectMany(projFile =>
-            {
-                var projFullFolder = Path.Combine(solutionFullDir, Path.GetDirectoryName(projFile));
+			var assetsFile = Path.Combine(BaseIntermediateOutputPath, "project.assets.json");
+			var assets = JObject.Parse(File.ReadAllText(assetsFile));
+			var projects = assets
+				.SelectTokens("$..msbuildProject")
+				.OfType<JValue>()
+				.Select(x => currentProjectFullDir / (string)x)
+				.ToList();
+			projects.Add(currentProjectFullPath);
+			
+			string runImageName = UsingMicrosoftNETSdkWeb ? "mcr.microsoft.com/dotnet/core/aspnet" : "mcr.microsoft.com/dotnet/core/runtime";
 
-                // Log.LogMessage( MessageImportance.High,  $"ProjFolder: {projFullFolder}");
-                var nugetConfig = Path.Combine(projFullFolder, "nuget.config");
-                // Log.LogMessage( MessageImportance.High,  $"NugetConfig: {nugetConfig}");
-                // Log.LogMessage( MessageImportance.High,  $"NugetConfigPath: {Path.GetDirectoryName(nugetConfig)}");
-                if (!File.Exists(nugetConfig))
-                    return Enumerable.Empty<Tuple<string,string>>();
-                using (var nugetConfigStream = File.OpenRead(nugetConfig))
-                {
-                    var doc = new XPathDocument(nugetConfigStream);
-                    var nav = doc.CreateNavigator();
-                    return nav.Select("/configuration/packageSources/add")
-                        .Cast<XPathNavigator>()
-                        .Select(x => x.GetAttribute("value", string.Empty))
-                        .Where(x => !Path.IsPathRooted(x) && !x.StartsWith(".."))
-                        .Select(x => Path.Combine(Path.GetDirectoryName(nugetConfig), x))
-                        .Select(x => MakeRelativePath(solutionFullDir, x))
-                        .Select(x => Tuple.Create(MakeRelativePath(solutionFullDir,nugetConfig), x));
-                }
-            }).ToArray();
-            var nugetConfigs = projectNugetConfigs.Select(x => x.Item1).Distinct();
-            sb.AppendLine("# copy nuget.config files at solution and project levels");
-            foreach (var nugetConfig in nugetConfigs)
-            {
-                sb.AppendLine($"COPY {nugetConfig} {nugetConfig}");
-            }
+			var sb = new StringBuilder();
+			sb.AppendLine($"FROM mcr.microsoft.com/dotnet/core/sdk:{imageVersion} AS build");
+			sb.AppendLine("WORKDIR src");
+			var projectNugetConfigs = projects
+				.Union(new[] { solutionFullPath })
+				.SelectMany(projFile =>
+				{
+					var projFullFolder = projFile.Parent;
+			
+					var nugetConfig = projFullFolder / "nuget.config";
+					if (!File.Exists(nugetConfig))
+						return Enumerable.Empty<NugetSource>();
+					using (var nugetConfigStream = File.OpenRead(nugetConfig))
+					{
+						var doc = new XPathDocument(nugetConfigStream);
+						var nav = doc.CreateNavigator();
+						return nav.Select("/configuration/packageSources/add")
+							.Cast<XPathNavigator>()
+							.Select(x => x.GetAttribute("value", string.Empty))
+							.Where(x => !Path.IsPathRooted(x))
+							.Select(pkgSource => nugetConfig.Parent / pkgSource) // get absolute path to source
+							.Select(x => new NugetSource
+							{ 
+								NugetFile = nugetConfig,
+								SourceFolder = x
+							})
+							.ToList();
+					}
+				})
+				.ToArray();
+			var nugetConfigs = projectNugetConfigs.Select(x => x.NugetFile).Distinct();
+			sb.AppendLine("# copy nuget.config files at solution and project levels");
+			foreach (var nugetConfig in nugetConfigs.Select(x => solutionFullDir.GetRelativePathTo(x)))
+			{
+				sb.AppendLine($"COPY [\"{nugetConfig}\", \"{nugetConfig}\"]");
+			}
 
-            sb.AppendLine("# copy any local nuget sources that are subfolders of the solution");
-            foreach (var nugetSource in projectNugetConfigs)
-            {
-                sb.AppendLine($"COPY {nugetSource.Item2} {nugetSource.Item2}");
-            }
-            sb.AppendLine($"COPY {solutionFilename} .");
-            foreach (var project in projects)
-            {
-                var osFixedProject = project.Replace('\\', '/');
-                sb.AppendLine($"COPY {osFixedProject} {osFixedProject}");
-            }
-            sb.AppendLine($"RUN dotnet restore {solutionFilename}");
-            
-            sb.AppendLine($"COPY . .");
-            var projectPath = currentProject.Replace('\\', '/');
-            sb.AppendLine($"RUN dotnet msbuild /p:RestorePackages=false /t:PublishLayer /p:PublishDir=/layer/ /p:DockerLayer=All {projectPath}");
+			sb.AppendLine("# copy any local nuget sources that are subfolders of the solution");
+			foreach (var nugetSource in projectNugetConfigs.Select(x => solutionFullDir.GetRelativePathTo(x.SourceFolder)))
+			{
+				sb.AppendLine($"COPY [\"{nugetSource}\", \"{nugetSource}\"]");
+			}
+			sb.AppendLine($"COPY {Path.GetFileName(solutionFullPath)} .");
+			foreach (var project in projects)
+			{
+				var osFixedProject = solutionFullDir.GetUnixRelativePathTo(project);
+				sb.AppendLine($"COPY [\"{osFixedProject}\", \"{osFixedProject}\"]");
+			}
+			sb.AppendLine($"RUN dotnet restore {Path.GetFileName(solutionFullPath)}");
 
-            sb.AppendLine($"FROM {runImageName}:{imageVersion} AS run");
-            sb.AppendLine($"WORKDIR /app");
-            foreach (var layer in KnownLayers.AllLayers)
-            {
-                var layerName = layer.ToString().ToLower();
-                sb.AppendLine($"COPY --from=build /layer/{layerName} ./");
-            }
+			sb.AppendLine($"COPY . .");
+			//var projectPath = currentProject.Replace('\\', '/');
+			sb.AppendLine($"RUN dotnet msbuild /p:RestorePackages=false /t:PublishLayer /p:PublishDir=/layer/ /p:DockerLayer=All \"{solutionFullDir.GetUnixRelativePathTo(currentProjectFullPath)}\"");
 
-            sb.AppendLine($"ENTRYPOINT [\"dotnet\", \"{AssemblyName}.dll\"]");
+			sb.AppendLine($"FROM {runImageName}:{imageVersion} AS run");
+			sb.AppendLine($"WORKDIR /app");
+			foreach (var layer in KnownLayers.AllLayers)
+			{
+				var layerName = layer.ToString().ToLower();
+				sb.AppendLine($"COPY --from=build /layer/{layerName} ./");
+			}
 
-            var dockerfileName = $"{MSBuildProjectName}.Dockerfile";
+			sb.AppendLine($"ENTRYPOINT [\"dotnet\", \"{AssemblyName}.dll\"]");
+
+            var dockerfileName = $"{Path.GetFileNameWithoutExtension(currentProjectFullPath)}.Dockerfile";
             File.WriteAllText(Path.Combine(solutionFullDir, dockerfileName), sb.ToString());
             Log.LogMessage(MessageImportance.High, $"Generated {dockerfileName}");
             
@@ -142,34 +152,13 @@ namespace NMica.Tasks
 
             return true;
 
-            String MakeRelativePath(String fromPath, String toPath)
-            {
-                if (String.IsNullOrEmpty(fromPath)) throw new ArgumentNullException(nameof(fromPath));
-                if (String.IsNullOrEmpty(toPath)) throw new ArgumentNullException(nameof(toPath));
-
-                if(!fromPath.EndsWith(Path.DirectorySeparatorChar.ToString()))
-                    fromPath += Path.DirectorySeparatorChar;
-                if (!fromPath.EndsWith(Path.DirectorySeparatorChar.ToString()))
-                    toPath += Path.DirectorySeparatorChar;
-
-                var fromUri = new Uri(fromPath);
-                Log.LogMessage(MessageImportance.High, toPath);
-                var toUri = new Uri(toPath);
-
-                if (fromUri.Scheme != toUri.Scheme) { return toPath; } // path can't be made relative.
-
-                Uri relativeUri = fromUri.MakeRelativeUri(toUri);
-                String relativePath = Uri.UnescapeDataString(relativeUri.ToString());
-
-                if (toUri.Scheme.Equals("file", StringComparison.InvariantCultureIgnoreCase))
-                {
-                    relativePath = relativePath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
-                }
-
-                return relativePath;
-            }   
+            
         }
-        
+        struct NugetSource
+        {
+	        public AbsolutePath NugetFile;
+	        public AbsolutePath SourceFolder;
+        }
         
     }
 }

@@ -10,6 +10,8 @@ namespace NMica.Tests.Utils
         [XmlIgnore]
         public string Name { get; set; } = "app1"; 
         [XmlIgnore]
+        public string SlnRelativeDir { get; set; } 
+        [XmlIgnore]
         public NugetConfiguration NugetConfig { get; set; }
         [XmlAttribute]
         public string Sdk {get;set;}

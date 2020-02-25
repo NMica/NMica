@@ -45,7 +45,7 @@ class Build : NukeBuild
     [Parameter("Determines if release branch will have pre-release tags applied to it. Default is false, meaning when cutting new version it is considered final (stable) package")]
     readonly bool IsPreRelease = false;
     [Parameter("Nuget ApiKey required in order to push packages")]
-    string ApiKey;
+    string NugetApiKey;
 
     string NMicaProject => Solution.GetProject("NMica").Path;
 
@@ -110,7 +110,7 @@ class Build : NukeBuild
             DotNetNuGetPush(_ => _
                 .SetSource("https://api.nuget.org/v3/index.json")
                 .SetTargetPath(ArtifactsDirectory / $"NMica.{GitVersion.NuGetPackageVersion}.nupkg")
-                .SetApiKey(ApiKey));
+                .SetApiKey(NugetApiKey));
         });
 
     Target CleanNugetCache => _ => _
