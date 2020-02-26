@@ -115,13 +115,12 @@ namespace NMica.Tasks
 			{
 				sb.AppendLine($"COPY [\"{nugetSource}\", \"{nugetSource}\"]");
 			}
-			sb.AppendLine($"COPY {Path.GetFileName(solutionFullPath)} .");
 			foreach (var project in projects)
 			{
 				var osFixedProject = solutionFullDir.GetUnixRelativePathTo(project);
 				sb.AppendLine($"COPY [\"{osFixedProject}\", \"{osFixedProject}\"]");
+				sb.AppendLine($"RUN dotnet restore \"{osFixedProject}\"");
 			}
-			sb.AppendLine($"RUN dotnet restore {Path.GetFileName(solutionFullPath)}");
 
 			sb.AppendLine($"COPY . .");
 			//var projectPath = currentProject.Replace('\\', '/');

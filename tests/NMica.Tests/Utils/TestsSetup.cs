@@ -1,5 +1,7 @@
 using System;
+using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using Nuke.Common;
 using Nuke.Common.IO;
 using Nuke.Common.Tooling;
@@ -28,7 +30,21 @@ namespace NMica.Tests.Utils
             //
             //     Environment.SetEnvironmentVariable("NERDBANKGITVERSIONING_EXE",nbgvDll);
             // }
-            FileSystemTasks.DeleteDirectory(nugetCacheFolder / "NMica" / NMicaVersion.NuGetPackageVersion);
+            try
+            {
+                FileSystemTasks.DeleteDirectory(nugetCacheFolder / "NMica" / NMicaVersion.NuGetPackageVersion);
+            }
+            catch (UnauthorizedAccessException e)
+            {
+                // something dumb is keeping locks on nuget cache between runs. this is a DIRTY hack to try to release any locks on that folder
+                foreach (var process in Process.GetProcesses()
+                    .Where(x => x.ProcessName == "dotnet" && x.Id != Process.GetCurrentProcess().Id))
+                {
+                    process.Kill(true);
+                }
+                FileSystemTasks.DeleteDirectory(nugetCacheFolder / "NMica" / NMicaVersion.NuGetPackageVersion);
+            }
+            
         }
 
         public static NerdbankGitVersioning NMicaVersion => _nMicaVersion.Value; 

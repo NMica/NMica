@@ -183,6 +183,38 @@ namespace NMica.Tests
                     }
                 }
             };
+            yield return new[]
+            {
+                new SolutionConfiguration
+                {
+                    Description = "solution /w unrelated project",
+                    NugetConfig = new NugetConfiguration().Add("artifacts", "artifacts"),
+                    Projects =
+                    {
+                        new Project
+                        {
+                            Name = "app1",
+                            Sdk = Sdks.Microsoft_NET_Sdk,
+                            PropertyGroup = {OutputType = "exe", TargetFramework = "netcoreapp3.1"},
+                            ItemGroup = {PackageReference.NMica, new ProjectReference("..\\common\\common.csproj")},
+                        },
+                        new Project
+                        {
+                            Name = "app2",
+                            Sdk = Sdks.Microsoft_NET_Sdk,
+                            PropertyGroup = {OutputType = "exe", TargetFramework = "netcoreapp3.1"},
+                            ItemGroup = {PackageReference.NMica}
+                        },
+                        new Project
+                        {
+                            Name = "common",
+                            Sdk = Sdks.Microsoft_NET_Sdk,
+                            PropertyGroup = {TargetFramework = "netcoreapp3.1"},
+                            
+                        }
+                    }
+                }
+            };
         }
 
   
