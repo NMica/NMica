@@ -119,9 +119,8 @@ namespace NMica.Tasks
 			{
 				var osFixedProject = solutionFullDir.GetUnixRelativePathTo(project);
 				sb.AppendLine($"COPY [\"{osFixedProject}\", \"{osFixedProject}\"]");
-				sb.AppendLine($"RUN dotnet restore \"{osFixedProject}\"");
 			}
-
+			sb.AppendLine($"RUN dotnet restore \"{solutionFullDir.GetRelativePathTo(currentProjectFullPath)}\"");
 			sb.AppendLine($"COPY . .");
 			//var projectPath = currentProject.Replace('\\', '/');
 			sb.AppendLine($"RUN dotnet msbuild /p:RestorePackages=false /t:PublishLayer /p:PublishDir=/layer/ /p:DockerLayer=All \"{solutionFullDir.GetUnixRelativePathTo(currentProjectFullPath)}\"");

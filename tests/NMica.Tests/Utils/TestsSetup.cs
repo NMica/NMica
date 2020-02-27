@@ -34,7 +34,7 @@ namespace NMica.Tests.Utils
             {
                 FileSystemTasks.DeleteDirectory(nugetCacheFolder / "NMica" / NMicaVersion.NuGetPackageVersion);
             }
-            catch (UnauthorizedAccessException e)
+            catch (UnauthorizedAccessException)
             {
                 // something dumb is keeping locks on nuget cache between runs. this is a DIRTY hack to try to release any locks on that folder
                 foreach (var process in Process.GetProcesses()
