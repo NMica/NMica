@@ -135,8 +135,8 @@ namespace NMica.Tasks
 
 			sb.AppendLine($"ENTRYPOINT [\"dotnet\", \"{AssemblyName}.dll\"]");
 
-            var dockerfileName = $"{Path.GetFileNameWithoutExtension(currentProjectFullPath)}.Dockerfile";
-            File.WriteAllText(Path.Combine(solutionFullDir, dockerfileName), sb.ToString());
+            var dockerfileName = Path.Combine(currentProjectFullPath, "Dockerfile");
+            File.WriteAllText(dockerfileName, sb.ToString());
             Log.LogMessage(MessageImportance.High, $"Generated {dockerfileName}");
             
             var dockerIgnoreFile = Path.Combine(solutionFullDir, ".dockerignore");
