@@ -48,11 +48,13 @@ namespace NMica.Tests
         {
             ExecuteProcess(() =>
             {
+                var appProject = solution.Projects.First(x => x.Name == "app1");
                 solution.Generate(_testDir);
+                
                 DotNetBuild(_ => _
                     .SetProjectFile(_testDir / "testapp.sln"));
                 DockerBuild(_ => _
-                    .SetFile(_testDir / "app1.Dockerfile")
+                    .SetFile(_testDir /  appProject.SlnRelativeDir / "Dockerfile")
                     .SetPath(_testDir)
                     .SetTag(TagName));
                 var result = DockerRun(_ => _
@@ -79,7 +81,7 @@ namespace NMica.Tests
                     .Flatten();
                 output.Should().NotContain("GenerateDockerfile:", "GenerateDockerfile target ran on build, but should have been skipped");
                 var dockerFilesGenerated = solution.Projects
-                    .Select(x => _testDir / $"{x.Name}.Dockerfile")
+                    .Select(x => _testDir / x.Name / "Dockerfile")
                     .Where(FileExists)
                     .ToList();
                 dockerFilesGenerated.Should().BeEmpty();

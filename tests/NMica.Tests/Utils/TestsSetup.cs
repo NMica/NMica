@@ -20,6 +20,7 @@ namespace NMica.Tests.Utils
             //
             var userFolder = (AbsolutePath) Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             var nugetCacheFolder = userFolder / ".nuget" / "packages";
+            return;
             // var nbgvDll = nugetCacheFolder / "nbgv" / "3.0.50" / "tools" / "netcoreapp2.1" / "any" / "nbgv.dll";
             //
             // Console.WriteLine(ToolPathResolver.NuGetPackagesConfigFile);

@@ -135,7 +135,7 @@ namespace NMica.Tasks
 
 			sb.AppendLine($"ENTRYPOINT [\"dotnet\", \"{AssemblyName}.dll\"]");
 
-            var dockerfileName = Path.Combine(currentProjectFullPath, "Dockerfile");
+            var dockerfileName = Path.Combine(currentProjectFullDir, "Dockerfile");
             File.WriteAllText(dockerfileName, sb.ToString());
             Log.LogMessage(MessageImportance.High, $"Generated {dockerfileName}");
             

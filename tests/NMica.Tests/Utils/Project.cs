@@ -7,10 +7,18 @@ namespace NMica.Tests.Utils
 {
     public class Project
     {
+        private string _slnRelativeDir;
+
         [XmlIgnore]
-        public string Name { get; set; } = "app1"; 
+        public string Name { get; set; } = "app1";
+
         [XmlIgnore]
-        public string SlnRelativeDir { get; set; } 
+        public string SlnRelativeDir
+        {
+            get => _slnRelativeDir ?? Name;
+            set => _slnRelativeDir = value;
+        }
+
         [XmlIgnore]
         public NugetConfiguration NugetConfig { get; set; }
         [XmlAttribute]
