@@ -17,24 +17,24 @@ namespace NMica.Tasks
 
         public string DockerLayer
         {
-            get => _layer.ToString(); 
-            set => _layer = (Layer)Enum.Parse(typeof(Layer), value, true);
+            get => _layers.Length > 0 ? String.Join(",", Array.ConvertAll(_layers, (Layer layer) => layer.ToString())) : "";
+            set => _layers = Array.ConvertAll(value.Split(','), (string v) => (Layer)Enum.Parse(typeof(Layer), v, true));
         }
 
-        private Layer _layer;
+        private Layer[] _layers;
         protected override bool ExecuteIsolated()
         {
             var assetsFile = Path.Combine(BaseIntermediateOutputPath, "project.assets.json");
-            
+
             var doc = JObject.Parse(File.ReadAllText(assetsFile));
-            
+
             // var root = doc.RootElement;
             var targets = doc["targets"];
             var framework = targets[TargetFrameworkMoniker];
             var originalFiles = Directory.EnumerateFiles(Path.Combine(Directory.GetCurrentDirectory(), PublishDir), "*", SearchOption.AllDirectories)
                 .ToList();
             var publishPath = Path.GetFullPath(PublishDir);
-            if (_layer == Layer.All)
+            if (_layers.Length == 0 || _layers.Contains(Layer.All))
             {
                 foreach (var layer in KnownLayers.AllLayers)
                 {
@@ -43,7 +43,10 @@ namespace NMica.Tasks
             }
             else
             {
-                PublishLayer(_layer);
+                foreach (var layer in _layers)
+                {
+                    PublishLayer(layer);
+                }
                 foreach (var file in originalFiles.Where(File.Exists))
                 {
                     File.Delete(file);

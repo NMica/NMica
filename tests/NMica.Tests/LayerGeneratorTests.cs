@@ -135,11 +135,34 @@ namespace NMica.Tests
                 .AddProperty("DockerLayer", "All")
                 .AddProperty("GenerateDockerfile", false));
             AssertLayers(msbuildPublishDir);
-            
-            void AssertLayers(AbsolutePath publishDir)
+
+            var cliMultiLayerPublishDir = _testDir / "cli-layers";
+            DotNet($"msbuild /t:PublishLayer /p:PublishDir={cliMultiLayerPublishDir} /p:DockerLayer=App,Project {projectFile} /p:GenerateDockerfile=False");
+            AssertLayers(cliMultiLayerPublishDir, true);
+
+            var msbuildMultiLayerPublishDir = _testDir / "msbuild-layers";
+            MSBuildTasks.MSBuild(_ => _
+                .SetProjectFile(projectFile)
+                .SetTargets("PublishLayer")
+                .AddProperty("PublishDir", msbuildMultiLayerPublishDir)
+                .AddProperty("DockerLayer", "App,Project")
+                .AddProperty("GenerateDockerfile", false));
+            AssertLayers(msbuildMultiLayerPublishDir, true);
+
+
+            void AssertLayers(AbsolutePath publishDir, bool multiLayer = false)
             {
-                FileExists(publishDir / "package" / "Newtonsoft.Json.dll").Should().BeTrue();
-                FileExists(publishDir / "earlypackage" / "Serilog.dll").Should().BeTrue();
+                if (multiLayer)
+                {
+                    FileExists(publishDir / "package" / "Newtonsoft.Json.dll").Should().BeFalse();
+                    FileExists(publishDir / "earlypackage" / "Serilog.dll").Should().BeFalse();
+                }
+                else
+                {
+                    FileExists(publishDir / "package" / "Newtonsoft.Json.dll").Should().BeTrue();
+                    FileExists(publishDir / "earlypackage" / "Serilog.dll").Should().BeTrue();
+                }
+
                 FileExists(publishDir / "project" / "classlib.dll").Should().BeTrue();
                 FileExists(publishDir / "app" / "app1.dll").Should().BeTrue();
             }
