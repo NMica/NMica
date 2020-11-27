@@ -19,10 +19,10 @@ namespace NMica.Tests.Utils
             NugetConfig.Generate(dir);
             var projects =  Projects
                 .ToDictionary(x => x.GenerateProgram(x.SlnRelativeDir == null ? dir / x.Name : dir / x.SlnRelativeDir), x => x);
-            DotNet("new sln -n testapp", dir).EnsureOnlyStd();
+            DotNet("new sln -n testapp", dir).EnsureNoErrors();
             foreach (var projectPath in projects.Keys.Select(x => dir.GetRelativePathTo(x)))
             {
-                DotNet($"sln testapp.sln add \"{projectPath}\"", dir).EnsureOnlyStd();    
+                DotNet($"sln testapp.sln add \"{projectPath}\"", dir).EnsureNoErrors();    
             }
 
             return projects;

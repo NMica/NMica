@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using NMica.Tests.Utils;
 using Nuke.Common;
@@ -49,21 +50,28 @@ namespace NMica.Tests
             ExecuteProcess(() =>
             {
                 var appProject = solution.Projects.First(x => x.Name == "app1");
-                solution.Generate(_testDir);
-                
-                DotNetBuild(_ => _
-                    .SetProjectFile(_testDir / "testapp.sln"));
-                DockerBuild(_ => _
-                    .SetFile(_testDir /  appProject.SlnRelativeDir / "Dockerfile")
-                    .SetPath(_testDir)
-                    .SetTag(TagName));
-                var result = DockerRun(_ => _
-                        .SetRm(true)
-                        .SetImage(TagName))
-                    .EnsureOnlyStd()
-                    .First()
-                    .Text;
-                result.Should().Be("PASSED");
+                var frameworks = appProject.PropertyGroup.TargetFrameworks?.Split(';') ?? new [] {appProject.PropertyGroup.TargetFramework };
+                var isMultiTarget = frameworks.Length > 1;
+                foreach (var framework in frameworks)
+                {
+                    var version = Regex.Replace(framework, @"[a-z\.]", string.Empty);
+                    var dockerFile = !isMultiTarget ? "Dockerfile" : $"Dockerfile{version}";
+                    solution.Generate(_testDir);
+
+                    DotNetBuild(_ => _
+                        .SetProjectFile(_testDir / "testapp.sln"));
+                    DockerBuild(_ => _
+                        .SetFile(_testDir / appProject.SlnRelativeDir / dockerFile)
+                        .SetPath(_testDir)
+                        .SetTag(TagName));
+                    var result = DockerRun(_ => _
+                            .SetRm(true)
+                            .SetImage(TagName))
+                        .EnsureOnlyStd()
+                        .First()
+                        .Text;
+                    result.Should().Be("PASSED");
+                }
             });
         }
 
@@ -88,9 +96,17 @@ namespace NMica.Tests
             });
         }
 
-        [Fact]
-        public void PublishLayer_ComplexSolution_LayersGenerated()
+        public static IEnumerable<object[]> GetSupportedFrameworks()
         {
+            yield return new[] {"netcoreapp3.1"};
+            yield return new[] {"net5.0"};
+        }
+
+        [Theory]
+        [MemberData(nameof(GetSupportedFrameworks))]
+        public void PublishLayer_ComplexSolution_LayersGenerated(string framework)
+        {
+            var root = NukeBuild.RootDirectory;
             var projects = new SolutionConfiguration
             {
                 NugetConfig = new NugetConfiguration().Add("artifacts", "artifacts"),
@@ -101,14 +117,14 @@ namespace NMica.Tests
                         Name = "app1",
                         // SlnRelativeDir = ".",
                         Sdk = Sdks.Microsoft_NET_Sdk,
-                        PropertyGroup = {OutputType = "exe", TargetFramework = "netcoreapp3.1"},
+                        PropertyGroup = {OutputType = "exe", TargetFramework = framework},
                     },
                     new Project()
                     {
                         Name = "classlib",
                         // SlnRelativeDir = ".",
                         Sdk = Sdks.Microsoft_NET_Sdk,
-                        PropertyGroup = {TargetFramework = "netcoreapp3.1"},
+                        PropertyGroup = {TargetFramework = framework},
                     }
                 }
             }.Generate(_testDir);
@@ -162,9 +178,9 @@ namespace NMica.Tests
 
         public static IEnumerable<object[]> GetBasicSupportedProjects()
         {
-            yield return MakeSolution("netcoreapp2.1 Microsoft_NET_Sdk", Sdks.Microsoft_NET_Sdk, "netcoreapp2.1");
+            yield return MakeSolution("net5.0 Microsoft_NET_Sdk", Sdks.Microsoft_NET_Sdk, "net5.0");
             yield return MakeSolution("netcoreapp3.1 Microsoft_NET_Sdk", Sdks.Microsoft_NET_Sdk, "netcoreapp3.1");
-            yield return MakeSolution("netcoreapp2.1 Microsoft_NET_Sdk_Web", Sdks.Microsoft_NET_Sdk_Web, "netcoreapp2.1");
+            yield return MakeSolution("net5.0 Microsoft_NET_Sdk_Web", Sdks.Microsoft_NET_Sdk_Web, "net5.0");
             yield return MakeSolution("netcoreapp3.1 Microsoft_NET_Sdk_Web", Sdks.Microsoft_NET_Sdk_Web, "netcoreapp3.1");
             yield return new[]
             {
@@ -217,6 +233,7 @@ namespace NMica.Tests
                     }
                 }
             };
+            
         }
 
   
@@ -225,13 +242,35 @@ namespace NMica.Tests
         {
             yield return MakeSolution("net472", Sdks.Microsoft_NET_Sdk, "net472");
             yield return MakeSolution("netcoreapp2.0", Sdks.Microsoft_NET_Sdk, "netcoreapp2.0");
+            yield return MakeSolution("netcoreapp2.1", Sdks.Microsoft_NET_Sdk, "netcoreapp2.1");
             yield return MakeSolution("netcoreapp2.2", Sdks.Microsoft_NET_Sdk, "netcoreapp2.2");
             yield return MakeSolution("netcoreapp3.0", Sdks.Microsoft_NET_Sdk, "netcoreapp3.0");
             yield return MakeSolution("netcoreapp3.1, outputType=Library", Sdks.Microsoft_NET_Sdk, "netcoreapp3.1", outputType: "Library");
         }
 
-        static object[] MakeSolution(string description, string sdk, string targetFramework, string outputType = "exe")
+        static object[] MakeSolution(string description, string sdk, string targetFramework, bool directRef = false, string outputType = "exe")
         {
+            var isMultiFramework = targetFramework.Split(";").Length > 1;
+            var targetFrameworks = string.Empty;
+            if (isMultiFramework)
+            {
+                targetFrameworks = targetFramework;
+                targetFramework = String.Empty;
+            }
+
+            var itemGroup = new List<object>();
+            var imports = new List<Import>();
+            var propertyGroup = new PropertyGroup {OutputType = outputType, TargetFramework = targetFramework, TargetFrameworks = targetFrameworks};
+            if (directRef)
+            {
+                var nmicaFramework = targetFramework == "net472" ? targetFramework : "netstandard2.0";
+                imports = new List<Import> {Import.NmicaProps, Import.NmicaTargets};
+                propertyGroup.NMicaToolsPath = NukeBuild.RootDirectory / "src" / "NMica" / "bin" / "Debug" / nmicaFramework / "NMica.dll";
+            }
+            else
+            {
+                itemGroup = new List<object> {PackageReference.NMica};
+            }
             return new object[]
             {
                 new SolutionConfiguration
@@ -243,8 +282,9 @@ namespace NMica.Tests
                         new Project
                         {
                             Sdk = sdk,
-                            PropertyGroup = {OutputType = outputType, TargetFramework = targetFramework},
-                            ItemGroup = {PackageReference.NMica}
+                            PropertyGroup = propertyGroup,
+                            ItemGroup = itemGroup,
+                            Imports = imports
                         }
                     }
                 }

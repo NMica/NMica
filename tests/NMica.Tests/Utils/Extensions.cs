@@ -6,6 +6,7 @@ using System.Text;
 using System.Xml;
 using System.Xml.Serialization;
 using FluentAssertions;
+using Nuke.Common;
 using Nuke.Common.IO;
 using Nuke.Common.Tooling;
 
@@ -13,6 +14,13 @@ namespace NMica.Tests.Utils
 {
     public static class Extensions
     {
+        public static IReadOnlyCollection<Output> EnsureNoErrors(
+            this IReadOnlyCollection<Output> output)
+        {
+            foreach (Output output1 in (IEnumerable<Output>) output)
+                ControlFlow.Assert(output1.Type == OutputType.Std, output1.Text);
+            return output;
+        }
         public static string ToXml(this object obj)
         {
 		

@@ -71,10 +71,10 @@ namespace NMica.Tasks
 				.ToList();
 			projects.Add(currentProjectFullPath);
 			
-			string runImageName = UsingMicrosoftNETSdkWeb ? "mcr.microsoft.com/dotnet/core/aspnet" : "mcr.microsoft.com/dotnet/core/runtime";
+			string runImageName = UsingMicrosoftNETSdkWeb ? "mcr.microsoft.com/dotnet/aspnet" : "mcr.microsoft.com/dotnet/runtime";
 
 			var sb = new StringBuilder();
-			sb.AppendLine($"FROM mcr.microsoft.com/dotnet/core/sdk:{imageVersion} AS build");
+			sb.AppendLine($"FROM mcr.microsoft.com/dotnet/sdk:{imageVersion} AS build");
 			sb.AppendLine("WORKDIR src");
 			var projectNugetConfigs = projects
 				.Union(new[] { solutionFullPath })

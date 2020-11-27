@@ -12,6 +12,7 @@ namespace NMica.Tasks
     public class PublishLayer : ContextIsolatedTask
     {
         public string TargetFrameworkMoniker { get; set; }
+        public string TargetFramework { get; set; }
         public string BaseIntermediateOutputPath { get; set; }
         public string PublishDir { get; set; }
 
@@ -24,13 +25,15 @@ namespace NMica.Tasks
         private Layer _layer;
         protected override bool ExecuteIsolated()
         {
+            // return true;
             var assetsFile = Path.Combine(BaseIntermediateOutputPath, "project.assets.json");
             
             var doc = JObject.Parse(File.ReadAllText(assetsFile));
             
             // var root = doc.RootElement;
             var targets = doc["targets"];
-            var framework = targets[TargetFrameworkMoniker];
+            var framework = targets[TargetFrameworkMoniker] ?? targets[TargetFramework];
+
             var originalFiles = Directory.EnumerateFiles(Path.Combine(Directory.GetCurrentDirectory(), PublishDir), "*", SearchOption.AllDirectories)
                 .ToList();
             var publishPath = Path.GetFullPath(PublishDir);

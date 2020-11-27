@@ -5,5 +5,6 @@ namespace NMica.Tests.Utils
         public string TargetFramework {get;set;}
         public string TargetFrameworks {get;set;}
         public string OutputType { get; set; }
+        public string NMicaToolsPath { get; set; }
     }
 }

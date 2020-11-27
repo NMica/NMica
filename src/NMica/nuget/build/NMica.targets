@@ -11,11 +11,14 @@
         >True</NMicaSupportedProject>
         <NMicaSupportedProject Condition="'$(NMicaSupportedProject)'==''">False</NMicaSupportedProject>
     </PropertyGroup>
+    
       <UsingTask TaskName="NMica.Tasks.PublishLayer" AssemblyFile="$(NMicaToolsPath)" />
       <UsingTask TaskName="NMica.Tasks.GenerateDockerfile" AssemblyFile="$(NMicaToolsPath)" />
       <UsingTask TaskName="NMica.Tasks.CleanPublishDir" AssemblyFile="$(NMicaToolsPath)" />
-      <Target Name="PublishLayer" DependsOnTargets="Publish;CleanPublish" Condition="'$(NMicaSupportedProject)' ">
-          <PublishLayer TargetFrameworkMoniker="$(TargetFrameworkMoniker)" 
+      <Target Name="PublishLayer" DependsOnTargets="Publish;CleanPublish" Condition="$(NMicaSupportedProject)">
+          <PublishLayer 
+                    TargetFrameworkMoniker="$(TargetFrameworkMoniker)" 
+                    TargetFramework="$(TargetFramework)" 
                     BaseIntermediateOutputPath="$(BaseIntermediateOutputPath)"
                     PublishDir="$(PublishDir)" 
                     DockerLayer="$(DockerLayer)"
@@ -24,12 +27,13 @@
       <Target Name="CleanPublish" BeforeTargets="Build" Condition="'$(NMicaSupportedProject)' AND '$(DockerLayer)'!=''">
           <CleanPublishDir PublishDir="$(PublishDir)" />
       </Target>
+
       <Target Name="GenerateDockerfile" AfterTargets="Build" Condition="
         '$(GenerateDockerfile)' AND 
         '$(NMicaSupportedProject)' AND
         '$(SolutionPath)' != '' AND 
         '$(SolutionPath)' != '*Undefined*'">
-          <GenerateDockerfile 
+          <GenerateDockerfile  
                   UsingMicrosoftNETSdkWeb="$(UsingMicrosoftNETSdkWeb)"
                   TargetFrameworkVersion="$(TargetFrameworkVersion)"
                   TargetFrameworkIdentifier="$(TargetFrameworkIdentifier)"

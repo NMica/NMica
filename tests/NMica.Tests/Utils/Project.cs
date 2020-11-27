@@ -9,6 +9,8 @@ namespace NMica.Tests.Utils
     {
         private string _slnRelativeDir;
 
+        [XmlElement("Import")]
+        public List<Import> Imports { get; set; } = new List<Import>();
         [XmlIgnore]
         public string Name { get; set; } = "app1";
 
@@ -29,6 +31,8 @@ namespace NMica.Tests.Utils
         [XmlArrayItem(typeof(PackageDownload))]
         [XmlArrayItem(typeof(ProjectReference))]
         public List<object> ItemGroup {get;set;} = new List<object>();
+       
+        
         public Project AddPackageReference(string name, string version)
         {
             ItemGroup.Add(new PackageReference{Include = name, Version = version});
