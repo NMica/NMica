@@ -104,6 +104,7 @@ class Build : NukeBuild
 
     Target Release => _ => _
         .After(Publish,Test)
+        .Requires(() => NugetApiKey)
         .OnlyWhenDynamic(() => string.IsNullOrEmpty(GitVersion.PrereleaseVersion)) // we don't publish non final releases to nuget.org - prerelease builds are available on azure artifacts feed
         .Executes(() =>
         {

@@ -44,7 +44,7 @@ namespace NMica.Tests
         }
 
         [Theory]
-        [MemberData(nameof(GetBasicSupportedProjects))]
+        [MemberData(nameof(GetBasicSupportedProjectsNuget))]
         public void BuildSolution_SupportedProjects_ContainerizesAndRuns(SolutionConfiguration solution)
         {
             ExecuteProcess(() =>
@@ -176,12 +176,14 @@ namespace NMica.Tests
             }
         }
 
-        public static IEnumerable<object[]> GetBasicSupportedProjects()
+        public static IEnumerable<object[]> GetBasicSupportedProjectsNuget() => GetBasicSupportedProjects(false);
+        public static IEnumerable<object[]> GetBasicSupportedProjectsTarget() => GetBasicSupportedProjects(true);
+        public static IEnumerable<object[]> GetBasicSupportedProjects(bool isDirect)
         {
-            yield return MakeSolution("net5.0 Microsoft_NET_Sdk", Sdks.Microsoft_NET_Sdk, "net5.0");
-            yield return MakeSolution("netcoreapp3.1 Microsoft_NET_Sdk", Sdks.Microsoft_NET_Sdk, "netcoreapp3.1");
-            yield return MakeSolution("net5.0 Microsoft_NET_Sdk_Web", Sdks.Microsoft_NET_Sdk_Web, "net5.0");
-            yield return MakeSolution("netcoreapp3.1 Microsoft_NET_Sdk_Web", Sdks.Microsoft_NET_Sdk_Web, "netcoreapp3.1");
+            yield return MakeSolution("net5.0 Microsoft_NET_Sdk", Sdks.Microsoft_NET_Sdk, "net5.0", isDirect);
+            yield return MakeSolution("netcoreapp3.1 Microsoft_NET_Sdk", Sdks.Microsoft_NET_Sdk, "netcoreapp3.1", isDirect);
+            yield return MakeSolution("net5.0 Microsoft_NET_Sdk_Web", Sdks.Microsoft_NET_Sdk_Web, "net5.0", isDirect);
+            yield return MakeSolution("netcoreapp3.1 Microsoft_NET_Sdk_Web", Sdks.Microsoft_NET_Sdk_Web, "netcoreapp3.1", isDirect);
             yield return new[]
             {
                 new SolutionConfiguration
@@ -242,13 +244,13 @@ namespace NMica.Tests
         {
             yield return MakeSolution("net472", Sdks.Microsoft_NET_Sdk, "net472");
             yield return MakeSolution("netcoreapp2.0", Sdks.Microsoft_NET_Sdk, "netcoreapp2.0");
-            yield return MakeSolution("netcoreapp2.1", Sdks.Microsoft_NET_Sdk, "netcoreapp2.1");
+            yield return MakeSolution("netcoreapp2.1", Sdks.Microsoft_NET_Sdk, "netcoreapp2.1"); 
             yield return MakeSolution("netcoreapp2.2", Sdks.Microsoft_NET_Sdk, "netcoreapp2.2");
             yield return MakeSolution("netcoreapp3.0", Sdks.Microsoft_NET_Sdk, "netcoreapp3.0");
             yield return MakeSolution("netcoreapp3.1, outputType=Library", Sdks.Microsoft_NET_Sdk, "netcoreapp3.1", outputType: "Library");
         }
 
-        static object[] MakeSolution(string description, string sdk, string targetFramework, bool directRef = false, string outputType = "exe")
+        static object[] MakeSolution(string description, string sdk, string targetFramework, bool directRef = true, string outputType = "exe")
         {
             var isMultiFramework = targetFramework.Split(";").Length > 1;
             var targetFrameworks = string.Empty;

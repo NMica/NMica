@@ -6,6 +6,7 @@
                 '$(TargetFrameworkVersion)'!='v1.0' AND 
                 '$(TargetFrameworkVersion)'!='v1.1' AND 
                 '$(TargetFrameworkVersion)'!='v2.0' AND 
+                '$(TargetFrameworkVersion)'!='v2.1' AND 
                 '$(TargetFrameworkVersion)'!='v2.2' AND 
                 '$(TargetFrameworkVersion)'!='v3.0' "
         >True</NMicaSupportedProject>
