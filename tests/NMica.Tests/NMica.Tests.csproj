@@ -1,12 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
     <PropertyGroup>
-        <TargetFramework>netcoreapp3.1</TargetFramework>
+        <TargetFramework>netcoreapp5.0</TargetFramework>
 
         <IsPackable>false</IsPackable>
     </PropertyGroup>
 
     <ItemGroup>
+        <PackageReference Include="Ductus.FluentDocker" Version="2.8.2" />
         <PackageReference Include="FluentAssertions" Version="5.10.2" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.2.0" />
         <PackageReference Include="xunit" Version="2.4.0" />
@@ -14,7 +14,59 @@
         <PackageReference Include="coverlet.collector" Version="1.0.1" />
         <PackageReference Include="Nuke.Common" Version="0.25.0-alpha0157" />
         <PackageDownload Include="nbgv" Version="[3.0.50]" />
-
+        
     </ItemGroup>
 
+    <PropertyGroup>
+        <UseGitVersion>false</UseGitVersion>
+        <PackageVersion>1.0.0-test</PackageVersion>
+    </PropertyGroup>
+<!--    <ItemGroup>-->
+<!--      <ProjectReference Include="..\..\src\NMica\NMica.csproj" >-->
+<!--          <ReferenceOutputAssembly>false</ReferenceOutputAssembly>-->
+<!--          <Targets>Pack</Targets>-->
+<!--      </ProjectReference>-->
+<!--    </ItemGroup>-->
+<!--    <Target Name="BeforeBuild">-->
+<!--        <PropertyGroup>-->
+<!--            <UseGitVersion>false</UseGitVersion>-->
+<!--            <PackageVersion>1.0.0-test</PackageVersion>-->
+<!--        </PropertyGroup>-->
+<!--    </Target>-->
+    
+    <Target Name="Artifacts" AfterTargets="Build">
+        
+        <ItemGroup>
+<!--            <TestProjectFolderPath Include="$([System.IO.Path]::GetDirectoryName('..\test\blah.fd'))" />-->
+            <ProjectReference>
+                <ProjectName>$([System.IO.Path]::GetFileNameWithoutExtension('%(Identity)'))</ProjectName>
+            </ProjectReference>
+            <ProjectReference>
+                <Nupkg>$([System.IO.Path]::GetDirectoryName('%(Identity)'))\$(OutDir)%(ProjectName).$(PackageVersion).nupkg</Nupkg>
+            </ProjectReference>
+        </ItemGroup>
+<!--        <ItemGroup>-->
+<!--            <MyStuff Include="@(ProjectReference)" Condition="%(Label) == 'Release Version'" />-->
+<!--        </ItemGroup>-->
+<!--        <Copy SourceFiles="@(MyStuff)" DestinationFolder="$(OutputDir)" ContinueOnError="false" />-->
+
+        <ItemGroup>
+          <ProjectReference Include="..\..\src\NMica\NMica.csproj" >
+              <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+              <Targets>Pack</Targets>
+          </ProjectReference>
+        </ItemGroup>
+        <MSBuild Projects="@(ProjectReference)" BuildInParallel="True" Targets="Pack" Properties="UseGitVersion=false" SkipNonexistentProjects="%(ProjectReference.SkipNonexistentProjects)">
+            <Output TaskParameter="TargetOutputs" ItemName="CollectedBuildOutput" />
+        </MSBuild>
+        <Message Text="@(CollectedBuildOutput)" Importance="high" />
+<!--        <Message Text="@(ProjectReference->'%(Nupkg)', ' ')" Importance="high" />-->
+<!--        <Message Text="@(ProjectReference->'%(ProjectName)', ' ')" Importance="high" />-->
+<!--        <Copy SourceFiles="@(ProjectReference->'%(Nupkg)', ' ')" DestinationFolder="$(OutDir)"/>-->
+    </Target>
+    <Target Name="BuildDependency" Outputs="@(CollectedBuildOutput)">
+        <MSBuild Projects="@(ProjectReference)" BuildInParallel="True" Properties="BuildingSolutionFile=true; CurrentSolutionConfigurationContents=$(CurrentSolutionConfigurationContents); SolutionDir=$(SolutionDir); SolutionExt=$(SolutionExt); SolutionFileName=$(SolutionFileName); SolutionName=$(SolutionName); SolutionPath=$(SolutionPath)" SkipNonexistentProjects="%(ProjectReference.SkipNonexistentProjects)">
+            <Output TaskParameter="TargetOutputs" ItemName="CollectedBuildOutput" />
+        </MSBuild>
+    </Target>
 </Project>

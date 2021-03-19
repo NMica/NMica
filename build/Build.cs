@@ -85,20 +85,21 @@ class Build : NukeBuild
         .Executes(() =>
         {
             
-            EnsureCleanDirectory(TemporaryDirectory);
+            // EnsureCleanDirectory(TemporaryDirectory);
             EnsureCleanDirectory(ArtifactsDirectory);
-            var dockerProject = Solution.GetProject("NMica").Directory;
-            var dockerCompileDir = dockerProject / "bin" / Configuration;
-            
-            CopyDirectoryRecursively(dockerProject / "nuget", TemporaryDirectory, DirectoryExistsPolicy.Merge);
-            CopyDirectoryRecursively(dockerCompileDir, TemporaryDirectory / "tasks");
+            // var dockerProject = Solution.GetProject("NMica").Directory;
+            // var dockerCompileDir = dockerProject / "bin" / Configuration;
+            //
+            // CopyDirectoryRecursively(dockerProject / "nuget", TemporaryDirectory, DirectoryExistsPolicy.Merge);
+            // CopyDirectoryRecursively(dockerCompileDir, TemporaryDirectory / "tasks");
 
             DotNetPack(_ => _
                     .SetProject(Solution.Path)
                     .DisableRunCodeAnalysis()
-                    .AddProperty("NuspecFile", TemporaryDirectory / "NMica.nuspec")
-                    .AddProperty("NoPackageAnalysis", true)
-                    .AddProperty("NuspecProperties", $"version={GitVersion.NuGetPackageVersion}")
+                    
+                    // .AddProperty("NuspecFile", TemporaryDirectory / "NMica.nuspec")
+                    // .AddProperty("NoPackageAnalysis", true)
+                    // .AddProperty("NuspecProperties", $"version={GitVersion.NuGetPackageVersion}")
                     .SetOutputDirectory(ArtifactsDirectory));
         });
 

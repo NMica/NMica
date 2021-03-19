@@ -4,6 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using Ductus.FluentDocker.Builders;
+using Ductus.FluentDocker.Model.Builders;
 using FluentAssertions;
 using NMica.Tests.Utils;
 using Nuke.Common;
@@ -98,13 +100,13 @@ namespace NMica.Tests
 
         public static IEnumerable<object[]> GetSupportedFrameworks()
         {
-            yield return new[] {"netcoreapp3.1"};
-            yield return new[] {"net5.0"};
+            yield return new[] {"netcoreapp3.1", "mcr.microsoft.com/dotnet/sdk:3.1"};
+            yield return new[] {"net5.0", "mcr.microsoft.com/dotnet/sdk:5.0"};
         }
 
         [Theory]
         [MemberData(nameof(GetSupportedFrameworks))]
-        public void PublishLayer_ComplexSolution_LayersGenerated(string framework)
+        public void PublishLayer_ComplexSolution_LayersGenerated(string framework, string sdkImage)
         {
             var root = NukeBuild.RootDirectory;
             var projects = new SolutionConfiguration
@@ -128,6 +130,13 @@ namespace NMica.Tests
                     }
                 }
             }.Generate(_testDir);
+            using var container = new Builder()
+                .UseContainer()
+                .UseImage(sdkImage)
+                .Mount(_testDir, "/app", MountType.ReadWrite)
+                .Build()
+                .Start();
+            
             var projectFile = projects
                 .Where(x => x.Value.Name == "app1")
                 .Select(x => x.Key)

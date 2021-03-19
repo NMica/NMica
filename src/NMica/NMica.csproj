@@ -3,7 +3,25 @@
     <PropertyGroup>
         <TargetFrameworks>net472;netstandard2.0</TargetFrameworks>
         <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+        <BuildOutputTargetFolder>tasks</BuildOutputTargetFolder>
+        <PackageId>NMica</PackageId>
+        <Authors>Andrew Stakhov</Authors>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageProjectUrl>http://github.com/NMica/NMica</PackageProjectUrl>
+        <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+        <Description>Intelligently generates Dockerfile based on project dependency tree to optimize cache hits between builds in .NET Core projects</Description>
+        <NoWarn>NU5100;NU5128</NoWarn>
     </PropertyGroup>
+    <Target Name="Test" BeforeTargets="CollectPackageReferences">
+<!--        <Message Importance="high" Text="UseGitVersion $(UseGitVersion)" Condition="'$(UseGitVersion)' == 'false'"/>-->
+        <Message Importance="high" Text="UseGitVersion $(UseGitVersion)"  Condition="'$(UseGitVersion)' != 'false'"/>
+        <ItemGroup Condition="'$(UseGitVersion)' != 'false'">
+            <PackageReference Include="Nerdbank.GitVersioning" Version="3.3.37"  Condition="'$(UseGitVersion)' != 'false'">
+                <PrivateAssets>all</PrivateAssets>
+                <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+            </PackageReference>
+        </ItemGroup>
+    </Target>
     <ItemDefinitionGroup>
         <PackageReference>
             <PrivateAssets>all</PrivateAssets>
@@ -12,8 +30,19 @@
             <PrivateAssets>all</PrivateAssets>
         </ProjectReference>
     </ItemDefinitionGroup>
+<!--    <Choose>-->
+<!--        <When Condition="'$(UseGitVersion)' != 'false'">-->
+<!--            <ItemGroup>-->
+<!--                <PackageReference Include="Nerdbank.GitVersioning" Version="3.3.37">-->
+<!--                    <PrivateAssets>all</PrivateAssets>-->
+<!--                    <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>-->
+<!--                </PackageReference>-->
+<!--            </ItemGroup>-->
+<!--        </When>-->
+<!--    </Choose>-->
     <ItemGroup>
       <PackageReference Include="Microsoft.Build.Tasks.Core" Version="16.4.0" />
+      
       <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
     </ItemGroup>
 
@@ -27,6 +56,12 @@
     <ItemGroup>
         <Compile Remove="Tasks\Base\net472\**" Condition=" '$(TargetFramework)' != 'net472' " />
         <Compile Remove="Tasks\Base\netstandard2.0\**" Condition=" '$(TargetFramework)' != 'netstandard2.0' " />
+    </ItemGroup>
+    <ItemGroup>
+        <Content Include="nuget\build\**">
+            <Pack>true</Pack>
+            <PackagePath>build</PackagePath>
+        </Content>
     </ItemGroup>
 <!--    <ItemGroup>-->
 <!--        <net472Assemblies Include="bin\Debug\net472\*.*" />-->
