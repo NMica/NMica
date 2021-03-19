@@ -5,7 +5,7 @@
     <version>1.0.0</version>
     <authors>Andrew Stakhov</authors>
     <owners>Andrew Stakhov</owners>
-    <licenseUrl>http://github.com/NMica/NMica/blob/master/LICENSE</licenseUrl>
+    <license type="expression">MIT</license>
     <projectUrl>http://github.com/NMica/NMica</projectUrl>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <description>Automates Dockerfile generation for .NET Core projects</description>

@@ -1,20 +1,14 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
     <PropertyGroup>
         <TargetFrameworks>net472;netstandard2.0</TargetFrameworks>
         <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+        <BuildOutputTargetFolder>tasks</BuildOutputTargetFolder>
+        <NoWarn>NU5100;NU5128</NoWarn>
     </PropertyGroup>
-    <ItemDefinitionGroup>
-        <PackageReference>
-            <PrivateAssets>all</PrivateAssets>
-        </PackageReference>
-        <ProjectReference>
-            <PrivateAssets>all</PrivateAssets>
-        </ProjectReference>
-    </ItemDefinitionGroup>
+ 
     <ItemGroup>
       <PackageReference Include="Microsoft.Build.Tasks.Core" Version="16.4.0" />
-      <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
+      <PackageReference Include="Newtonsoft.Json" Version="12.0.3" PrivateAssets="all" />
     </ItemGroup>
 
     <ItemGroup Condition="'$(TargetFramework)' == 'net472' ">
@@ -28,9 +22,4 @@
         <Compile Remove="Tasks\Base\net472\**" Condition=" '$(TargetFramework)' != 'net472' " />
         <Compile Remove="Tasks\Base\netstandard2.0\**" Condition=" '$(TargetFramework)' != 'netstandard2.0' " />
     </ItemGroup>
-<!--    <ItemGroup>-->
-<!--        <net472Assemblies Include="bin\Debug\net472\*.*" />-->
-<!--        <NetStandardAssemblies Include="bin\Debug\netstandard2.0\*.*" />-->
-<!--    </ItemGroup>-->
-    
 </Project>

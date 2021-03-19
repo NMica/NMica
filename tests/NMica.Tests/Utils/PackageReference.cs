@@ -8,6 +8,6 @@ namespace NMica.Tests.Utils
         public string Include {get;set;}
         [XmlAttribute]
         public string Version {get;set;}
-        public static PackageReference NMica => new PackageReference {Include = "Nmica", Version = TestsSetup.NMicaVersion.NuGetPackageVersion};
+        public static PackageReference NMica => new PackageReference {Include = "Nmica", Version = TestsSetup.NMicaVersion};
     }
 }

@@ -10,6 +10,5 @@ jobs:
         displayName: Call Nuke CI Target
         env:
           NugetApiKey: $(NugetApiKey)
-      - publish: artifacts
-        artifact: nuget
-        displayName: Publish Nuget package
+          DockerPassword: $(DockerPassword)
+

@@ -1,6 +1,5 @@
 using System.Xml.Serialization;
 using Nuke.Common;
-using Nuke.Common.IO;
 
 namespace NMica.Tests.Utils
 {

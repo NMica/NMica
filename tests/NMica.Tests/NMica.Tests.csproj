@@ -1,20 +1,39 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
     <PropertyGroup>
-        <TargetFramework>netcoreapp3.1</TargetFramework>
-
+        <TargetFramework>netcoreapp5.0</TargetFramework>
         <IsPackable>false</IsPackable>
+        <NukeRoot>..\..\</NukeRoot>
+        <TestPackageVersion>1.0.0-test</TestPackageVersion>
     </PropertyGroup>
 
     <ItemGroup>
         <PackageReference Include="FluentAssertions" Version="5.10.2" />
+        <PackageReference Include="Lib.Harmony" Version="2.0.4" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.2.0" />
         <PackageReference Include="xunit" Version="2.4.0" />
         <PackageReference Include="xunit.runner.visualstudio" Version="2.4.0" />
         <PackageReference Include="coverlet.collector" Version="1.0.1" />
-        <PackageReference Include="Nuke.Common" Version="0.25.0-alpha0157" />
+<!--        <PackageReference Include="Nuke.Common" Version="0.25.0-alpha0157" />-->
+        <PackageReference Include="Nuke.Common" Version="5.0.2" />
         <PackageDownload Include="nbgv" Version="[3.0.50]" />
+    </ItemGroup>
+
+    <ItemGroup>
+
+      <None Update="BuilderImage\Dockerfile">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\..\build-tasks\BuildTasks.csproj" />
 
     </ItemGroup>
+    
+
+    <Target Name="Artifacts" AfterTargets="Build" Condition="($(NoDependencyBuild) != 'true') and ($(VSTestListTests) != 'true')">
+        <!-- Fuck MSBuild - it's built by sadists. Assembling a package out of nuspec should not be this difficult. Delegate out to Nuke --> 
+        <Exec Command="dotnet run PublishTest EnsureLatestBuilderImage --nologo --skip Clean CompileTests PublishLatestBuilder LoginDocker --verbosity Quiet" EnvironmentVariables="NO_TERM_COLOR=true" WorkingDirectory="$(NukeRoot)\build" />
+    </Target>
 
 </Project>

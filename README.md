@@ -10,7 +10,7 @@ Dockerfiles will be generated inside solution directory for each executable proj
 
 ### Supported project types:
 
-- Executable .NET Core projects targeting v2.1 or v3.1 (*these are the only target frameworks that have officially supported images that are not end of life*)
+- Executable .NET Core projects targeting v5.0 or v3.1 (*these are the only target frameworks that have officially supported images that are not end of life*)
 
 ## Features
 - Autogenerate Dockerfile for every compatible project in solution

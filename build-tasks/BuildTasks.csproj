@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net5.0</TargetFramework>
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Nuke.Common" Version="5.0.2" />
+        <PackageDownload Include="nbgv" Version="[3.0.50]" />
+    </ItemGroup>
+</Project>

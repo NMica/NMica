@@ -32,7 +32,13 @@ namespace NMica.Tests.Utils
         [XmlArrayItem(typeof(ProjectReference))]
         public List<object> ItemGroup {get;set;} = new List<object>();
        
-        
+        public Project AddProjectReference(Project project)
+        {
+            var slnRelativeFromSelf = PathConstruction.GetRelativePath(SlnRelativeDir, @"\");
+            var reference = Path.Combine(slnRelativeFromSelf, project.SlnRelativeDir, $"{project.Name}.csproj");
+            ItemGroup.Add(new ProjectReference(reference));
+            return this;
+        }
         public Project AddPackageReference(string name, string version)
         {
             ItemGroup.Add(new PackageReference{Include = name, Version = version});

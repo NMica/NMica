@@ -5,7 +5,8 @@ using System.IO;
 using System.Linq;
 using Microsoft.Build.Framework;
 using Newtonsoft.Json.Linq;
-using NMica.Tasks.Base; // using System.Text.Json;
+using NMica.Tasks.Base;
+using NMica.Utils; // using System.Text.Json;
 
 namespace NMica.Tasks
 {
@@ -18,11 +19,11 @@ namespace NMica.Tasks
 
         public string DockerLayer
         {
-            get => _layer.ToString(); 
-            set => _layer = (Layer)Enum.Parse(typeof(Layer), value, true);
+            get => _layersToPublish.ToString(); 
+            set => _layersToPublish = string.IsNullOrEmpty(value) ? Layer.All : (Layer)Enum.Parse(typeof(Layer), value, true);
         }
 
-        private Layer _layer;
+        private Layer _layersToPublish = Layer.All;
         protected override bool ExecuteIsolated()
         {
             // return true;
@@ -34,23 +35,17 @@ namespace NMica.Tasks
             var targets = doc["targets"];
             var framework = targets[TargetFrameworkMoniker] ?? targets[TargetFramework];
 
+            // stores the output of publish command - these get sorted into individual layers
             var originalFiles = Directory.EnumerateFiles(Path.Combine(Directory.GetCurrentDirectory(), PublishDir), "*", SearchOption.AllDirectories)
                 .ToList();
             var publishPath = Path.GetFullPath(PublishDir);
-            if (_layer == Layer.All)
+            foreach (var layer in _layersToPublish.ToValuesArray())
             {
-                foreach (var layer in KnownLayers.AllLayers)
-                {
-                    PublishLayer(layer);
-                }
+                PublishLayer(layer);
             }
-            else
+            foreach (var file in originalFiles.Where(File.Exists))
             {
-                PublishLayer(_layer);
-                foreach (var file in originalFiles.Where(File.Exists))
-                {
-                    File.Delete(file);
-                }
+                File.Delete(file);
             }
             LogToConsole(Directory.EnumerateFiles(publishPath, string.Empty, SearchOption.AllDirectories));
             

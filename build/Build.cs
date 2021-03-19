@@ -1,9 +1,14 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using Nuke.Common;
+using Nuke.Common.CI;
+using Nuke.Common.CI.AzurePipelines;
 using Nuke.Common.Execution;
 using Nuke.Common.IO;
+using Nuke.Common.OutputSinks;
 using Nuke.Common.ProjectModel;
 using Nuke.Common.Tooling;
 using Nuke.Common.Tools.Docker;
@@ -14,11 +19,17 @@ using static Nuke.Common.Tools.NerdbankGitVersioning.NerdbankGitVersioningTasks;
 using Nuke.Common.Utilities.Collections;
 using static Nuke.Common.IO.FileSystemTasks;
 using static Nuke.Common.Tools.DotNet.DotNetTasks;
+// using static Nuke.Common.Tools.Docker.DockerTasks;
 using static Nuke.Common.Tools.MSBuild.MSBuildTasks;
 using static Nuke.Common.ControlFlow;
 
 [CheckBuildProjectConfigurations]
 [UnsetVisualStudioEnvironmentVariables]
+// [AzurePipelines(
+//     image: AzurePipelinesImage.WindowsLatest,
+//     AutoGenerate = true,
+//     NonEntryTargets = new[]{nameof(Clean)},
+//     InvokedTargets = new []{nameof(CI)})]
 class Build : NukeBuild
 {
     /// Support plugins are available for:
@@ -30,26 +41,41 @@ class Build : NukeBuild
     public static int Main () => Execute<Build>(x => x.Compile);
 
     [Parameter("Configuration to build - Default is 'Debug' (local) or 'Release' (server)")]
-    readonly Configuration Configuration = IsLocalBuild ? Configuration.Debug : Configuration.Release;
-
-    [Parameter("Framework to build against - netstandard2.0 or net472")]
-    readonly string Framework;
-    
-    [Solution] readonly Solution Solution;
-    
-    AbsolutePath SourceDirectory => RootDirectory / "src";
-    AbsolutePath TestsDirectory => RootDirectory / "tests";
-    AbsolutePath ArtifactsDirectory => RootDirectory / "artifacts";
-    AbsolutePath SamplesSolutionDir => Solution.Directory / "Samples" / "MultiProjectWebApp";
+    readonly string Configuration = IsLocalBuild ? "Debug" : "Release";
+    [Parameter("Nuget version to use. Default to value provided by Nerdbank GitVersion")] 
+    string Version;
 
     [Parameter("Determines if release branch will have pre-release tags applied to it. Default is false, meaning when cutting new version it is considered final (stable) package")]
     readonly bool IsPreRelease = false;
+
     [Parameter("Nuget ApiKey required in order to push packages")]
     string NugetApiKey;
+    
+    [Parameter] string DockerUsername;
+    [Parameter] string DockerPassword;
+    AbsolutePath SourceDirectory => RootDirectory / "src";
+    AbsolutePath TestsDirectory => RootDirectory / "tests";
+    AbsolutePath ArtifactsDirectory => RootDirectory / "artifacts";
+    AbsolutePath CacheDirectory => RootDirectory / "cache";
+    
+    
+    
+    [Solution] readonly Solution Solution;
+    Project NMicaProject => Solution.GetProject("NMica")!;
+    Project TestProject => Solution.GetProject("NMica.Tests")!;
+    
+    [Partition(2)] readonly Partition TestPartition;
+    IEnumerable<Project> TestProjects => TestPartition.GetCurrent(Solution.GetProjects("*.Tests"));
+    AbsolutePath TestResultDirectory => ArtifactsDirectory / "test-results";
 
-    string NMicaProject => Solution.GetProject("NMica").Path;
-
-    [NerdbankGitVersioning] readonly NerdbankGitVersioning GitVersion;
+    [NerdbankGitVersioning(UpdateBuildNumber = true)] readonly NerdbankGitVersioning GitVersion;
+    [NerdbankGitVersioning(Project = "tests/NMica.Tests/BuilderImage")] readonly NerdbankGitVersioning TestBuilderVersion;
+    const string TestPackageNugetVersion = "1.0.0-test";
+    const string TestBuilderImageName = "nmica-test-container";
+    static readonly string TestBuilderDockerRepository = $"macsux/{TestBuilderImageName}";
+    string TestBuilderDockerImageWithTag => $"{TestBuilderDockerRepository}:{TestBuilderVersion.NuGetPackageVersion}-{Environment.OSVersion.Version}";
+    protected override void OnBuildInitialized() => Version ??= GitVersion.NuGetPackageVersion;
+    
 
     Target Clean => _ => _
         .Before(Restore)
@@ -68,42 +94,80 @@ class Build : NukeBuild
                 .SetProjectFile(Solution));
         });
 
-    Target Compile => _ => _
+
+    Target CompileSource => _ => _
         .DependsOn(Restore)
+        .Unlisted()
         .Executes(() =>
         {
             DotNetBuild(_ => _
-                .SetProjectFile(Solution)
-                .SetFramework(Framework)
+                .SetProjectFile(NMicaProject.Path)
                 .SetConfiguration(Configuration)
                 .EnableNoRestore());
         });
 
+    Target CompileTests => _ => _
+        .DependsOn(Restore)
+        .Unlisted()
+        .Executes(() =>
+        {
+            DotNetBuild(_ => _
+                .SetProjectFile(TestProject.Path)
+                .SetConfiguration(Configuration)
+                .SetProperty("NoDependencyBuild", true)
+                .EnableNoRestore());
+        });
+
+    Target Compile => _ => _
+        .DependsOn(Restore, CompileSource, CompileTests);
+    
     Target Publish => _ => _
-        .DependsOn(Clean,Compile)
+        .DependsOn(Clean, Compile)
         .Description("Creates nuget package in artifacts directory")
         .Executes(() =>
         {
-            
-            EnsureCleanDirectory(TemporaryDirectory);
-            EnsureCleanDirectory(ArtifactsDirectory);
-            var dockerProject = Solution.GetProject("NMica").Directory;
-            var dockerCompileDir = dockerProject / "bin" / Configuration;
-            
-            CopyDirectoryRecursively(dockerProject / "nuget", TemporaryDirectory, DirectoryExistsPolicy.Merge);
-            CopyDirectoryRecursively(dockerCompileDir, TemporaryDirectory / "tasks");
+            DoPublish(Version);
+            // if (!GitVersion.PublicRelease)
+            // {
+                ArtifactsDirectory.GlobFiles("*.nupkg").ForEach(package =>
+                    AzurePipelines.Instance?.UploadArtifacts("", "nuget", package));
+            // }
+        });
 
-            DotNetPack(_ => _
-                    .SetProject(Solution.Path)
-                    .DisableRunCodeAnalysis()
-                    .AddProperty("NuspecFile", TemporaryDirectory / "NMica.nuspec")
-                    .AddProperty("NoPackageAnalysis", true)
-                    .AddProperty("NuspecProperties", $"version={GitVersion.NuGetPackageVersion}")
-                    .SetOutputDirectory(ArtifactsDirectory));
+    void DoPublish(string packageVersion)
+    {
+        packageVersion ??= Version;
+
+        EnsureCleanDirectory(TemporaryDirectory);
+        var dockerProject = NMicaProject.Directory;
+        var dockerCompileDir = dockerProject / "bin" / Configuration;
+            
+        CopyDirectoryRecursively(dockerProject / "nuget", TemporaryDirectory, DirectoryExistsPolicy.Merge);
+        CopyDirectoryRecursively(dockerCompileDir, TemporaryDirectory / "tasks");
+
+        DotNetPack(_ => _
+            .SetProject(NMicaProject.Path)
+            .DisableRunCodeAnalysis()
+            .EnableNoBuild()
+            .AddProperty("NuspecFile", TemporaryDirectory / "NMica.nuspec")
+            .AddProperty("NoPackageAnalysis", true)
+            .AddProperty("NuspecProperties", $"version={packageVersion}")
+            .SetOutputDirectory(ArtifactsDirectory));
+            
+        
+    }
+
+
+    Target PublishTest => _ => _
+        .Unlisted()
+        .DependsOn(Clean, Compile)
+        .Executes(() =>
+        {
+            DoPublish(TestPackageNugetVersion);
         });
 
     Target Release => _ => _
-        .After(Publish,Test)
+        .DependsOn(Publish,Test)
         .Requires(() => NugetApiKey)
         .OnlyWhenDynamic(() => string.IsNullOrEmpty(GitVersion.PrereleaseVersion)) // we don't publish non final releases to nuget.org - prerelease builds are available on azure artifacts feed
         .Executes(() =>
@@ -114,44 +178,113 @@ class Build : NukeBuild
                 .SetApiKey(NugetApiKey));
         });
 
-    Target CleanNugetCache => _ => _
-        .DependsOn(Publish)
+    Target LoginDocker => _ => _
+        .Requires(() => DockerUsername, () => DockerPassword)
         .Unlisted()
         .Executes(() =>
         {
-            // for some reason dotnet is leaving locks on nuget dll after tests even after existing
-            // this is a dirty hack that kills every dotnet process except current one to release lock
-            foreach (var process in Process.GetProcesses()
-                .Where(x => x.ProcessName == "dotnet" && x.Id != Process.GetCurrentProcess().Id))
-            {
-                process.Kill(true);
-            }
-                
-            var userFolder = (AbsolutePath) Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            var nugetCacheFolder = userFolder / ".nuget" / "packages";
-            DeleteDirectory(nugetCacheFolder / "NMica");
-            
+            DockerTasks.DockerLogin(_ => _
+                .SetUsername(DockerUsername)
+                .SetPassword(DockerPassword)
+                .DisableProcessLogOutput());
         });
-    
+    Target PullBuilderImage => _ => _
+        .OnlyWhenDynamic(() => !IsDockerImageInLocalRepo(TestBuilderDockerImageWithTag))
+        .Executes(() =>
+        {
+            try
+            {
+                DockerTasks.DockerPull(_ => _
+                    .SetName(TestBuilderDockerImageWithTag));
+            }
+            catch (ProcessException e) when(e.Message.Contains("not found"))
+            {
+                
+            }
+        });
+
+    Target MakeBuilderImage => _ => _
+        .After(PullBuilderImage)
+        .OnlyWhenDynamic(() => !IsDockerImageInLocalRepo(TestBuilderDockerImageWithTag))
+        .Executes(() =>
+        {
+            var builderImageDir = TestProject.Directory / "BuilderImage";
+            DockerTasks.DockerBuild(_ => _
+                .SetPath(builderImageDir)
+                .SetProcessWorkingDirectory(builderImageDir)
+                .SetTag(TestBuilderDockerImageWithTag));
+        });
+
+    Target EnsureLatestBuilderImage => _ => _
+        .Before(Test)
+        .DependsOn(PullBuilderImage, MakeBuilderImage, PublishLatestBuilder);
+
+    Target PublishLatestBuilder => _ => _
+        .DependsOn(MakeBuilderImage, LoginDocker)
+        // .OnlyWhenDynamic(() => !SkippedTargets.Any(x => x.Factory == MakeBuilderImage))
+        .Executes(() =>
+        {
+            DockerTasks.DockerPush(_ => _
+                .SetName(TestBuilderDockerImageWithTag));
+        });
 
     Target Test => _ => _
-        .After(Publish)
+        .DependsOn(PublishTest)
+        .Produces(TestResultDirectory / "*.trx")
+        .Produces(TestResultDirectory / "*.xml")
         .Description("Executes test suite. Requires Docker")
         .Executes(() =>
         {
-            var testProject = RootDirectory / "tests" / "NMica.Tests" / "NMica.Tests.csproj";
-            DotNetTest(_ => _
-                .SetProjectFile(testProject)
-                .SetWorkingDirectory(testProject.Parent));
+            
+            try
+            {
+                DotNetTest(_ => _
+                    .SetConfiguration(Configuration)
+                    .SetNoBuild(InvokedTargets.Contains(Compile))
+                    .ResetVerbosity()
+                    .AddProperty("NoDependencyBuild", true)
+                    .SetResultsDirectory(TestResultDirectory)
+                    .SetProjectFile(TestProject.Path)
+                    .CombineWith(TestProjects, (_, v) => _
+                        .SetProjectFile(v)
+                        .SetProcessWorkingDirectory(v.Directory)
+                        .SetLogger($"trx;LogFileName={v.Name}.trx")),
+                    completeOnFailure: true);
+                
+            }
+            finally
+            {
+                ReportTestResults();
+            }
         });
+
+    bool IsDockerImageInLocalRepo(string image) =>
+        DockerTasks.DockerImages(c => c
+            .SetFormat("'{{json .}}'")
+            .SetRepository(image)
+            .DisableProcessLogOutput())
+        .Any();
+    
+    void ReportTestResults()
+    {
+        TestResultDirectory.GlobFiles("*.trx").ForEach(x =>
+            AzurePipelines.Instance?.PublishTestResults(
+                type: AzurePipelinesTestResultsType.VSTest,
+                title: $"{Path.GetFileNameWithoutExtension(x)} ({AzurePipelines.Instance.StageDisplayName})",
+                files: new string[] { x }));
+    }
 
     Target CutReleaseBranch => _ => _
         .Executes(() => NerdbankGitVersioningPrepareRelease(_ => _
-            .SetWorkingDirectory(RootDirectory)
+            .SetProcessWorkingDirectory(RootDirectory)
             .SetTag(IsPreRelease ? "beta" : null)));
+
 
     Target CI => _ => _
         .Unlisted()
-        .Triggers(Publish, Test, Release)
-        .Executes(() => NerdbankGitVersioningCloud());
+        .Triggers(Publish, EnsureLatestBuilderImage, Test, Release)
+        .Executes(() =>
+        {
+            AzurePipelines.Instance?.UpdateBuildNumber(GitVersion.CloudBuildNumber);
+        });
 }
