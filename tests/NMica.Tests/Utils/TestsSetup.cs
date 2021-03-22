@@ -19,8 +19,10 @@ namespace NMica.Tests.Utils
                 .Any();
             if (!imageExists)
             {
+                var builderImageSpec = NukeBuild.RootDirectory / "tests" / "NMica.Tests" / "BuilderImage"; 
                 DockerTasks.DockerBuild(c => c
-                        .SetWorkingDirectory(NukeBuild.RootDirectory / "tests" / "NMica.Tests" / "BuilderImage")
+                        .SetPath(builderImageSpec)
+                        .SetWorkingDirectory(builderImageSpec)
                         .SetTag(TestContainerSDKImage))
                     .EnsureNoErrors();
             }
