@@ -12,6 +12,11 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{176F10B7
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "build", "build", "{4A589623-5549-45BE-8CD9-149FCDCA0239}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "versioning", "versioning", "{E0D89001-3DB2-4ED4-8929-9CF5060AFDA8}"
+ProjectSection(SolutionItems) = preProject
+	version.json = version.json
+EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

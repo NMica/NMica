@@ -4,8 +4,6 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
-using Ductus.FluentDocker.Builders;
-using Ductus.FluentDocker.Model.Builders;
 using FluentAssertions;
 using NMica.Tests.Utils;
 using Nuke.Common;
@@ -13,7 +11,6 @@ using Nuke.Common.IO;
 using Nuke.Common.Tooling;
 using Nuke.Common.Tools.Docker;
 using Nuke.Common.Tools.DotNet;
-using Nuke.Common.Tools.MSBuild;
 using Nuke.Common.Utilities.Collections;
 using Xunit;
 using Xunit.Abstractions;
@@ -32,6 +29,7 @@ namespace NMica.Tests
         private readonly AbsolutePath _testDir;
         private readonly string _testName;
         private string TagName => _testName.Replace(".", "_").ToLower();
+        static readonly AbsolutePath ContainerAppRoot = (AbsolutePath) @"c:\app";
 
 
         public LayerGeneratorTests(ITestOutputHelper output, TestsSetup setup)
@@ -59,9 +57,16 @@ namespace NMica.Tests
                     var version = Regex.Replace(framework, @"[a-z\.]", string.Empty);
                     var dockerFile = !isMultiTarget ? "Dockerfile" : $"Dockerfile{version}";
                     solution.Generate(_testDir);
+                    
+                    // compile in docker
+                    var appMount = _testDir.ToMountedPath(ContainerAppRoot);
+                    DockerRun(_ => _
+                        .EnableRm()
+                        .AddVolume(appMount)
+                        .SetImage(TestsSetup.TestContainerSDKImage)
+                        .SetCommand($"dotnet build {appMount / "testapp.sln"}"));
 
-                    DotNetBuild(_ => _
-                        .SetProjectFile(_testDir / "testapp.sln"));
+                    
                     DockerBuild(_ => _
                         .SetFile(_testDir / appProject.SlnRelativeDir / dockerFile)
                         .SetPath(_testDir)
@@ -100,14 +105,18 @@ namespace NMica.Tests
 
         public static IEnumerable<object[]> GetSupportedFrameworks()
         {
-            yield return new[] {"netcoreapp3.1", "mcr.microsoft.com/dotnet/sdk:3.1"};
-            yield return new[] {"net5.0", "mcr.microsoft.com/dotnet/sdk:5.0"};
+            // yield return new[] {"netcoreapp3.1", "mcr.microsoft.com/dotnet/sdk:3.1"};
+            yield return new[] {"net5.0"};
         }
+
+
+
 
         [Theory]
         [MemberData(nameof(GetSupportedFrameworks))]
-        public void PublishLayer_ComplexSolution_LayersGenerated(string framework, string sdkImage)
+        public void PublishLayer_ComplexSolution_LayersGenerated(string framework)
         {
+            // Console.WriteLine(sdkImage);
             var root = NukeBuild.RootDirectory;
             var projects = new SolutionConfiguration
             {
@@ -130,37 +139,42 @@ namespace NMica.Tests
                     }
                 }
             }.Generate(_testDir);
-            using var container = new Builder()
-                .UseContainer()
-                .UseImage(sdkImage)
-                .Mount(_testDir, "/app", MountType.ReadWrite)
-                .Build()
-                .Start();
             
             var projectFile = projects
                 .Where(x => x.Value.Name == "app1")
                 .Select(x => x.Key)
                 .First();
             DotNet($@"add {projectFile} reference ..{Path.DirectorySeparatorChar}classlib{Path.DirectorySeparatorChar}classlib.csproj", projectFile.Parent);
-            DotNet($@"add {projectFile} package NMica -v {TestsSetup.NMicaVersion.NuGetPackageVersion} ");
+            DotNet($@"add {projectFile} package NMica -v {TestsSetup.NMicaVersion} ");
             DotNet($@"add {projectFile} package Serilog -v 2.9.1-dev-01154 ");
-            DotNet($@"add {projectFile} package Newtonsoft.Json -v 12.0.1 ");
+            DotNet($@"add {projectFile} package Newtonsoft.Json -v 12.0.3 ");
             DotNetRestore(_ => _
                 .SetProjectFile(projectFile));
+
+            var containerAppDir = (AbsolutePath) @"c:\app";
+            var containerProjectFile = containerAppDir / "app1"  / "app1.csproj";
+            var containerDotnetPublishDir = containerAppDir / "dotnet-cli-layers";
+            var containerMsBuildPublishDir = containerAppDir / "msbuild-cli-layers";
+            var hostDotnetPublishDir = _testDir / "dotnet-cli-layers";
+            var hostMsBuildPublishDir = _testDir / "msbuild-cli-layers";
+
+
             
-            var cliPublishDir = _testDir / "cli-layers";
-            DotNet($"msbuild /t:PublishLayer /p:PublishDir={cliPublishDir} /p:DockerLayer=All {projectFile} /p:GenerateDockerfile=False");
-            AssertLayers(cliPublishDir);
-            
-            var msbuildPublishDir = _testDir / "msbuild-layers";
-            MSBuildTasks.MSBuild(_ => _
-                .SetProjectFile(projectFile)
-                .SetTargets("PublishLayer")
-                .AddProperty("PublishDir", msbuildPublishDir)
-                .AddProperty("DockerLayer", "All")
-                .AddProperty("GenerateDockerfile", false));
-            AssertLayers(msbuildPublishDir);
-            
+
+            var args = new DotNetBuildSettings().SetProjectFile(containerProjectFile).GetArguments().RenderForExecution();
+            DockerRun(_ => _
+                .EnableRm()
+                .SetVolume($"{_testDir.ToDockerfilePath()}:{containerAppDir.ToDockerfilePath()}")
+                .SetImage(TestsSetup.TestContainerSDKImage)
+                .SetCommand(
+                    Batch(
+                        $"dotnet build {containerProjectFile}", // build it first to restore our addon targets
+                        $@"dotnet msbuild /t:PublishLayer /p:PublishDir={containerDotnetPublishDir} /p:DockerLayer=All /p:GenerateDockerfile=False {containerProjectFile}", // build using dotnet cli
+                        $"msbuild /t:PublishLayer /p:PublishDir={containerMsBuildPublishDir} /p:DockerLayer=All {containerProjectFile} /p:GenerateDockerfile=False"))); // build using msbuild
+
+            AssertLayers(hostDotnetPublishDir);
+            AssertLayers(hostMsBuildPublishDir);
+
             void AssertLayers(AbsolutePath publishDir)
             {
                 FileExists(publishDir / "package" / "Newtonsoft.Json.dll").Should().BeTrue();
@@ -244,10 +258,7 @@ namespace NMica.Tests
                     }
                 }
             };
-            
         }
-
-  
 
         public static IEnumerable<object[]> GetBasicUnsupportedProjects()
         {
@@ -306,6 +317,22 @@ namespace NMica.Tests
         public void Dispose()
         {
             // Directory.Delete(_testDir, true);
+        }
+        
+        
+        // IReadOnlyCollection<Output> ExecuteInDocker<T>(string image, string tool, Configure<T> configurator, MountedPath volume) where T : ToolSettings
+        // {
+        //     var command = $"{tool} {configurator(Activator.CreateInstance<T>()).GetArguments().RenderForExecution()}";
+        //     DockerRun(_ => _
+        //         .EnableRm()
+        //         .SetVolume($"{volume.HostPath.ToDockerfilePath()}:{volume.ToDockerfilePath()}")
+        //         .SetImage(TestsSetup.TestContainerSDKImage)
+        //         .SetCommand(command));
+        // }
+        
+        string Batch(params string[] commands)
+        {
+            return $"powershell '&'('{string.Join(" ; ", commands)}')";
         }
     }
 }

@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -9,11 +8,17 @@ using FluentAssertions;
 using Nuke.Common;
 using Nuke.Common.IO;
 using Nuke.Common.Tooling;
+using Nuke.Common.Tools.Docker;
 
 namespace NMica.Tests.Utils
 {
     public static class Extensions
     {
+        
+        public static DockerRunSettings AddVolume(this DockerRunSettings settings, MountedPath path) => settings.AddVolume($"{path.HostPath.ToDockerfilePath()}:{path.ToDockerfilePath()}");
+        public static MountedPath ToMountedPath(this AbsolutePath path, AbsolutePath mountPoint) => new MountedPath(mountPoint, path);
+        public static string ToDockerfilePath(this AbsolutePath path) => path.ToString().Replace("\\", "/");
+        public static string ToDockerfilePath(this MountedPath path) => path.ToString().Replace("\\", "/");
         public static IReadOnlyCollection<Output> EnsureNoErrors(
             this IReadOnlyCollection<Output> output)
         {
