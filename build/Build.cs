@@ -212,7 +212,8 @@ class Build : NukeBuild
             DockerTasks.DockerBuild(_ => _
                 .SetPath(builderImageDir)
                 .SetProcessWorkingDirectory(builderImageDir)
-                .SetTag(TestBuilderDockerImageWithTag));
+                .SetTag(TestBuilderDockerImageWithTag)
+                .SetProcessEnvironmentVariable("DOCKER_SCAN_SUGGEST","false"));
         });
 
     Target EnsureLatestBuilderImage => _ => _

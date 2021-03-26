@@ -6,10 +6,9 @@ using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
-using System.Linq;
-using static Nuke.Common.IO.PathConstruction;
+using static NMica.Utils.PathConstruction;
 
-namespace Nuke.Common.IO
+namespace NMica.Utils
 {
     [Serializable]
     [TypeConverter(typeof(TypeConverter))]

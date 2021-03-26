@@ -3,10 +3,9 @@
 // https://github.com/nuke-build/nuke/blob/master/LICENSE
 
 using System;
-using System.Linq;
-using static Nuke.Common.IO.PathConstruction;
+using static NMica.Utils.PathConstruction;
 
-namespace Nuke.Common.IO
+namespace NMica.Utils
 {
     [Serializable]
     public class WinRelativePath : RelativePath

@@ -27,9 +27,13 @@
 
     <ItemGroup>
       <ProjectReference Include="..\..\build-tasks\BuildTasks.csproj" />
-
+      <ProjectReference Include="..\..\src\NMica\NMica.csproj" />
     </ItemGroup>
     
+<!--    <PropertyGroup>-->
+<!--        <NoDependencyBuild>true</NoDependencyBuild>-->
+<!--    </PropertyGroup>-->
+<!--    -->
 
     <Target Name="Artifacts" AfterTargets="Build" Condition="($(NoDependencyBuild) != 'true') and ($(VSTestListTests) != 'true')">
         <!-- Fuck MSBuild - it's built by sadists. Assembling a package out of nuspec should not be this difficult. Delegate out to Nuke --> 

@@ -9,7 +9,7 @@ using System.Xml.XPath;
 using Microsoft.Build.Framework;
 using Newtonsoft.Json.Linq;
 using NMica.Tasks.Base;
-using Nuke.Common.IO;
+using NMica.Utils;
 
 namespace NMica.Tasks
 {

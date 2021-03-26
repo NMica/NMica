@@ -17,7 +17,8 @@
       <UsingTask TaskName="NMica.Tasks.GenerateDockerfile" AssemblyFile="$(NMicaToolsPath)" />
       <UsingTask TaskName="NMica.Tasks.CleanPublishDir" AssemblyFile="$(NMicaToolsPath)" />
       <Target Name="PublishLayer" DependsOnTargets="Publish;CleanPublish" Condition="$(NMicaSupportedProject)">
-          <PublishLayer 
+          <PublishLayer
+                    RuntimeIdentifier="$(RuntimeIdentifier)"
                     TargetFrameworkMoniker="$(TargetFrameworkMoniker)" 
                     TargetFramework="$(TargetFramework)" 
                     BaseIntermediateOutputPath="$(BaseIntermediateOutputPath)"

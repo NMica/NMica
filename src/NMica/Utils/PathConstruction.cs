@@ -3,17 +3,16 @@
 // https://github.com/nuke-build/nuke/blob/master/LICENSE
 
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 // using GlobExpressions;
 // using JetBrains.Annotations;
-using Nuke.Common.Utilities;
+
 // using Nuke.Common.Utilities.Collections;
 
 // ReSharper disable ArrangeMethodOrOperatorBody
 
-namespace Nuke.Common.IO
+namespace NMica.Utils
 {
     /// <summary>
     /// <p>Provides an abstraction for generating Windows/Unix/UNC-compliant

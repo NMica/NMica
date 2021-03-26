@@ -4,6 +4,7 @@
         <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
         <BuildOutputTargetFolder>tasks</BuildOutputTargetFolder>
         <NoWarn>NU5100;NU5128</NoWarn>
+        <Platforms>AnyCPU</Platforms>
     </PropertyGroup>
  
     <ItemGroup>
