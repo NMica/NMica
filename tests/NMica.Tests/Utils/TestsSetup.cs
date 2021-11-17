@@ -20,7 +20,7 @@ namespace NMica.Tests.Utils
                     .DisableProcessLogOutput()
                     .SetFormat(NerdbankGitVersioningFormat.Json))
                 .Result;
-            TestContainerSDKImage = $"macsux/nmica-test-container:{version.NuGetPackageVersion}-{Environment.OSVersion.Version}";
+            TestContainerSDKImage = $"macsux/nmica-test-container:{version.NuGetPackageVersion}";
 
             // lock (_lock)
             // {

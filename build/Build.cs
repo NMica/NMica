@@ -73,7 +73,7 @@ class Build : NukeBuild
     const string TestPackageNugetVersion = "1.0.0-test";
     const string TestBuilderImageName = "nmica-test-container";
     static readonly string TestBuilderDockerRepository = $"macsux/{TestBuilderImageName}";
-    string TestBuilderDockerImageWithTag => $"{TestBuilderDockerRepository}:{TestBuilderVersion.NuGetPackageVersion}-{Environment.OSVersion.Version}";
+    string TestBuilderDockerImageWithTag => $"{TestBuilderDockerRepository}:{TestBuilderVersion.NuGetPackageVersion}";
     protected override void OnBuildInitialized() => Version ??= GitVersion.NuGetPackageVersion;
     
 
