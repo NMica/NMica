@@ -140,10 +140,22 @@ namespace NMica.Tests
                 .SetCommand(
                     Batch(
                         $"dotnet build {containerProjectFile}", // build it first to restore our addon targets
-                        $@"dotnet msbuild /t:PublishLayer /p:PublishDir={dotnetPublishDir} /p:DockerLayer=All /p:GenerateDockerfile=False {containerProjectFile}", // build using dotnet cli
-                        $"msbuild /t:PublishLayer /p:PublishDir={msbuildPublishDir} /p:DockerLayer=All {containerProjectFile} /p:GenerateDockerfile=False"))); // build using msbuild
+                        $@"dotnet msbuild /t:PublishLayer /p:PublishDir={dotnetPublishDir} /p:DockerLayer=All /p:GenerateDockerfile=False {containerProjectFile}" // build using dotnet cli
+                        ))); // build using msbuild
 
             AssertLayers(dotnetPublishDir.HostPath);
+            
+            DockerRun(_ => _
+                .EnableRm()
+                .SetVolume(ContainerAppDir)
+                .SetImage(_setup.TestContainerSDKImage)
+                .SetCommand(
+                    Batch(
+                        $"msbuild /t:Restore {containerProjectFile}",
+                        $"msbuild /t:Build {containerProjectFile}",
+                        $"msbuild /t:PublishLayer /p:PublishDir={msbuildPublishDir} /p:DockerLayer=All {containerProjectFile}"
+                    ))); // build using msbuild
+            
             AssertLayers(msbuildPublishDir.HostPath);
 
             void AssertLayers(AbsolutePath publishDir)
