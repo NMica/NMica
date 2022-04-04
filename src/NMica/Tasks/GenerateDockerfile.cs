@@ -7,13 +7,14 @@ using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.XPath;
 using Microsoft.Build.Framework;
+using MSBuildExtensionTask;
 using Newtonsoft.Json.Linq;
 using NMica.Tasks.Base;
 using NMica.Utils;
 
 namespace NMica.Tasks
 {
-    public class GenerateDockerfile  : ContextIsolatedTask
+    public class GenerateDockerfile  : ContextAwareTask
     {
         public bool UsingMicrosoftNETSdkWeb { get; set; }
         public string TargetFrameworkVersion { get; set; }
@@ -24,7 +25,7 @@ namespace NMica.Tasks
         public string SolutionPath { get; set; }
         public bool IsExecutable { get; set; }
 
-        protected override bool ExecuteIsolated()
+        protected override bool ExecuteInner()
         {
             // technically all these checks are redundant as they exist in targets file as conditions,
             // but if we get called SOMEHOW accidentally let's not fail the whole build (return true) but give reason why task failed

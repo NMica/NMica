@@ -134,6 +134,13 @@ class Build : NukeBuild
             // }
         });
 
+    Target Pack => _ => _
+        .DependsOn(Clean, Compile)
+        .Executes(() =>
+        {
+            DoPublish(Version);
+        });
+
     void DoPublish(string packageVersion)
     {
         packageVersion ??= Version;

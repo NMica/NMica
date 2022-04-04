@@ -3,16 +3,17 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using Microsoft.Build.Framework;
+using MSBuildExtensionTask;
 using NMica.Tasks.Base;
 
 namespace NMica.Tasks
 {
-    public class CleanPublishDir  : ContextIsolatedTask
+    public class CleanPublishDir  : ContextAwareTask
     {
         private const int MaxRetry = 10;
         public string PublishDir { get; set; }
 
-        protected override bool ExecuteIsolated()
+        protected override bool ExecuteInner()
         {
             Log.LogMessage(MessageImportance.High, "Cleaning publish folder");
             if (Directory.Exists(PublishDir) && Directory.EnumerateFileSystemEntries(PublishDir).Any())

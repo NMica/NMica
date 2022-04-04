@@ -5,13 +5,14 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Microsoft.Build.Framework;
+using MSBuildExtensionTask;
 using Newtonsoft.Json.Linq;
 using NMica.Tasks.Base;
 using NMica.Utils; // using System.Text.Json;
 
 namespace NMica.Tasks
 {
-    public class PublishLayer : ContextIsolatedTask
+    public class PublishLayer : ContextAwareTask
     {
         public string RuntimeIdentifier { get; set; } = "";
         public string TargetFrameworkMoniker { get; set; } = "";
@@ -32,7 +33,7 @@ namespace NMica.Tasks
 
         private Layer _layersToPublish = Layer.All;
 
-        protected override bool ExecuteIsolated()
+        protected override bool ExecuteInner()
         {
             Initialize();
             // var publishPath = Path.GetFullPath(PublishDir);
