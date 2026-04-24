@@ -9,7 +9,7 @@ namespace NMica.Tests.Utils
         public static string ArtifactsDir => Path.Combine(RepoRoot, "artifacts");
         public static string NMicaPropsPath => Path.Combine(RepoRoot, "src", "NMica", "build", "NMica.props");
         public static string NMicaTargetsPath => Path.Combine(RepoRoot, "src", "NMica", "build", "NMica.targets");
-        public static string NMicaTaskDll => Path.Combine(RepoRoot, "src", "NMica", "bin", "Debug", "net8.0", "NMica.dll");
+        public static string NMicaTaskDll => Path.Combine(RepoRoot, "src", "NMica", "bin", "Debug", "net9.0", "NMica.dll");
 
         private static string FindRepoRoot()
         {

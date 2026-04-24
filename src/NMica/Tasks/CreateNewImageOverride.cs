@@ -1,328 +1,260 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
-using NMica.Containers;
-using NMica.Containers.Sinks;
+using Microsoft.Extensions.Logging;
+using Microsoft.NET.Build.Containers;
+using Microsoft.NET.Build.Containers.Resources;
+using NMica.Vendor;
+using ILogger = Microsoft.Extensions.Logging.ILogger;
 
-// Intentional namespace-shadow: NMica.targets declares a <UsingTask> for
-// Microsoft.NET.Build.Containers.Tasks.CreateNewImage pointing at NMica.dll. That registration
-// (imported after the SDK's) wins via MSBuild's last-UsingTask-wins rule, so _PublishSingleContainer
-// routes here.
+// Intentional namespace-shadow. NMica.targets registers a <UsingTask> for
+// Microsoft.NET.Build.Containers.Tasks.CreateNewImage that points at NMica.dll. MSBuild's
+// last-registered-wins rule (NuGet .targets import after SDK targets) routes the SDK's
+// _PublishSingleContainer call into THIS class instead of the SDK's own implementation.
 //
-// Property names MUST match the SDK's CreateNewImage call site verbatim (see
-// Microsoft.NET.Build.Containers.targets → _PublishSingleContainer). If the SDK adds a property
-// in a newer version, MSBuild fails with MSB4064 until we add it here too.
-namespace Microsoft.NET.Build.Containers.Tasks
+// The flow is a near-verbatim copy of src/Containers/Microsoft.NET.Build.Containers/Tasks/
+// CreateNewImage.cs (upstream), except for one critical change: instead of making a single
+// Layer.FromDirectory() call on $(PublishDir), we enumerate the package/earlypackage/project/app
+// subdirectories (prepared by _NMicaPreparePublishLayers) and call Layer.FromDirectory() +
+// imageBuilder.AddLayer() once per populated bucket. Everything else — base image pull, image
+// config assembly, manifest construction, and publish to the chosen sink — reuses the SDK
+// machinery unchanged.
+namespace Microsoft.NET.Build.Containers.Tasks;
+
+public sealed class CreateNewImage : Microsoft.Build.Utilities.Task, ICancelableTask, IDisposable
 {
-    public class CreateNewImage : Microsoft.Build.Utilities.Task
+    private readonly CancellationTokenSource _cts = new();
+    private static readonly string[] LayerOrder = { "package", "earlypackage", "project", "app" };
+
+    // ---- Inputs (match the SDK's CreateNewImage.Interface.cs property-by-property so the
+    // SDK's _PublishSingleContainer call site binds without MSB4064 errors) ----
+
+    public string ContainerizeDirectory { get; set; } = "";
+    public string ToolPath { get; set; } = "";
+    public string ToolExe { get; set; } = "";
+
+    public string BaseRegistry { get; set; } = "";
+    [Required] public string BaseImageName { get; set; } = "";
+    public string BaseImageTag { get; set; } = "";
+    public string BaseImageDigest { get; set; } = "";
+    public string ImageFormat { get; set; } = "";
+
+    public string OutputRegistry { get; set; } = "";
+    public string LocalRegistry { get; set; } = "";
+    public string ArchiveOutputPath { get; set; } = "";
+
+    [Required] public string Repository { get; set; } = "";
+    [Required] public string[] ImageTags { get; set; } = Array.Empty<string>();
+
+    [Required] public string PublishDirectory { get; set; } = "";
+    public string WorkingDirectory { get; set; } = "/app";
+
+    public ITaskItem[] Entrypoint { get; set; } = Array.Empty<ITaskItem>();
+    public ITaskItem[] EntrypointArgs { get; set; } = Array.Empty<ITaskItem>();
+    public ITaskItem[] AppCommand { get; set; } = Array.Empty<ITaskItem>();
+    public ITaskItem[] AppCommandArgs { get; set; } = Array.Empty<ITaskItem>();
+    public string AppCommandInstruction { get; set; } = "";
+    public ITaskItem[] DefaultArgs { get; set; } = Array.Empty<ITaskItem>();
+
+    public ITaskItem[] Labels { get; set; } = Array.Empty<ITaskItem>();
+    public ITaskItem[] ExposedPorts { get; set; } = Array.Empty<ITaskItem>();
+    public ITaskItem[] ContainerEnvironmentVariables { get; set; } = Array.Empty<ITaskItem>();
+    public string ContainerUser { get; set; } = "";
+    public string ContainerRuntimeIdentifier { get; set; } = "";
+    public string RuntimeIdentifierGraphPath { get; set; } = "";
+    public bool SkipPublishing { get; set; }
+    public bool GenerateLabels { get; set; }
+    public bool GenerateDigestLabel { get; set; }
+
+    // ---- Outputs ----
+
+    [Output] public string GeneratedContainerDigest { get; set; } = "";
+    [Output] public string GeneratedContainerManifest { get; set; } = "";
+    [Output] public string GeneratedContainerConfiguration { get; set; } = "";
+    [Output] public string GeneratedContainerMediaType { get; set; } = "";
+    [Output] public ITaskItem[] GeneratedContainerNames { get; set; } = Array.Empty<ITaskItem>();
+    [Output] public string GeneratedArchiveOutputPath { get; set; } = "";
+    [Output] public ITaskItem? GeneratedDigestLabel { get; set; }
+
+    public void Cancel() => _cts.Cancel();
+    public void Dispose() => _cts.Dispose();
+
+    public override bool Execute()
     {
-        // --- Inputs the SDK's _PublishSingleContainer passes. ---
-
-        [Required]
-        public string PublishDirectory { get; set; } = "";
-        public string ContainerizeDirectory { get; set; } = "";
-        public string ToolPath { get; set; } = "";
-        public string ToolExe { get; set; } = "";
-        public string WorkingDirectory { get; set; } = "/app";
-
-        public string BaseRegistry { get; set; } = "";
-        public string BaseImageName { get; set; } = "";
-        public string BaseImageTag { get; set; } = "";
-        public string BaseImageDigest { get; set; } = "";
-        public string ImageFormat { get; set; } = "";
-
-        public string Repository { get; set; } = "";
-        public ITaskItem[] ImageTags { get; set; } = Array.Empty<ITaskItem>();
-
-        public string OutputRegistry { get; set; } = "";
-        public string LocalRegistry { get; set; } = "";
-        public string ArchiveOutputPath { get; set; } = "";
-
-        public ITaskItem[] Entrypoint { get; set; } = Array.Empty<ITaskItem>();
-        public ITaskItem[] EntrypointArgs { get; set; } = Array.Empty<ITaskItem>();
-        public ITaskItem[] AppCommand { get; set; } = Array.Empty<ITaskItem>();
-        public ITaskItem[] AppCommandArgs { get; set; } = Array.Empty<ITaskItem>();
-        public string AppCommandInstruction { get; set; } = "";
-        public ITaskItem[] DefaultArgs { get; set; } = Array.Empty<ITaskItem>();
-
-        public ITaskItem[] Labels { get; set; } = Array.Empty<ITaskItem>();
-        public ITaskItem[] ExposedPorts { get; set; } = Array.Empty<ITaskItem>();
-        public ITaskItem[] ContainerEnvironmentVariables { get; set; } = Array.Empty<ITaskItem>();
-        public string ContainerUser { get; set; } = "";
-        public string ContainerRuntimeIdentifier { get; set; } = "";
-        public string RuntimeIdentifierGraphPath { get; set; } = "";
-        public bool SkipPublishing { get; set; }
-        public bool GenerateLabels { get; set; }
-        public bool GenerateDigestLabel { get; set; }
-
-        // --- Outputs ---
-
-        [Output] public string GeneratedContainerDigest { get; set; } = "";
-        [Output] public string GeneratedContainerManifest { get; set; } = "";
-        [Output] public string GeneratedContainerConfiguration { get; set; } = "";
-        [Output] public string GeneratedContainerMediaType { get; set; } = "";
-        [Output] public ITaskItem[] GeneratedContainerNames { get; set; } = Array.Empty<ITaskItem>();
-        [Output] public string GeneratedArchiveOutputPath { get; set; } = "";
-        [Output] public ITaskItem[] GeneratedDigestLabel { get; set; } = Array.Empty<ITaskItem>();
-
-        private static readonly string[] LayerOrder = { "package", "earlypackage", "project", "app" };
-
-        public override bool Execute()
+        try
         {
-            if (SkipPublishing) return true;
+            System.Threading.Tasks.Task.Run(() => ExecuteAsync(_cts.Token)).GetAwaiter().GetResult();
+        }
+        catch (TaskCanceledException ex) { Log.LogWarningFromException(ex); }
+        catch (OperationCanceledException ex) { Log.LogWarningFromException(ex); }
+        return !Log.HasLoggedErrors;
+    }
 
-            // The companion _NMicaPreparePublishLayers target runs PublishLayer before us, which
-            // rearranges $(PublishDir) into package/earlypackage/project/app subdirs.
-            var existingLayers = LayerOrder
-                .Where(l => Directory.Exists(Path.Combine(PublishDirectory, l)))
-                .ToList();
-            if (existingLayers.Count == 0)
-            {
-                Log.LogError(
-                    "NMica's CreateNewImage expected a layered publish directory at '{0}' (with " +
-                    "package/, earlypackage/, project/, or app/ subdirectories) but found none. " +
-                    "Set <NMicaOverridePublishContainer>false</NMicaOverridePublishContainer> to fall " +
-                    "back to the SDK's single-layer behaviour.",
-                    PublishDirectory);
-                return false;
-            }
+    private async System.Threading.Tasks.Task<bool> ExecuteAsync(CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
 
-            // Daemonless OCI archive output — the primary Route A path.
-            if (!string.IsNullOrEmpty(ArchiveOutputPath))
-            {
-                try
-                {
-                    return ExecuteOciArchiveAsync(existingLayers).GetAwaiter().GetResult();
-                }
-                catch (Exception e)
-                {
-                    Log.LogError("NMica OCI archive write failed: {0}", e.Message);
-                    Log.LogMessage(MessageImportance.Low, e.ToString());
-                    return false;
-                }
-            }
+        using var loggerProvider = new MSBuildLoggerProvider(Log);
+        ILoggerFactory loggerFactory = new NMicaLoggerFactory(loggerProvider);
+        ILogger logger = loggerFactory.CreateLogger<CreateNewImage>();
 
-            // Other output modes (local daemon, remote registry) still use the docker-build
-            // fallback. Phase 2 will replace these with direct registry push + docker-save format
-            // tarball + docker load.
-            return ExecuteDockerBuildFallback(existingLayers);
+        if (!Directory.Exists(PublishDirectory))
+        {
+            Log.LogErrorWithCodeFromResources(nameof(Strings.PublishDirectoryDoesntExist), nameof(PublishDirectory), PublishDirectory);
+            return false;
         }
 
-        private async Task<bool> ExecuteOciArchiveAsync(IList<string> existingLayers)
+        // _NMicaPreparePublishLayers (a BeforeTarget of _PublishSingleContainer) restructures
+        // $(PublishDir) into package/earlypackage/project/app subdirectories. If none exist
+        // something went wrong — fail rather than silently emitting a single-layer image.
+        var layerDirs = LayerOrder
+            .Select(n => Path.Combine(PublishDirectory, n))
+            .Where(Directory.Exists)
+            .ToList();
+        if (layerDirs.Count == 0)
         {
-            var tagValues = ResolveTags();
-            var baseRef = ImageReference.Parse(BaseRegistry, BaseImageName, BaseImageTag);
-
-            Log.LogMessage(MessageImportance.High,
-                "NMica: pulling base image manifest {0}", baseRef);
-
-            using var registry = new Registry();
-            var (baseManifest, _, _, _) = await registry.GetManifestAsync(baseRef, ContainerRuntimeIdentifier);
-            var baseConfigJson = await registry.GetBlobAsStringAsync(baseRef, baseManifest.Config.Digest);
-
-            var builder = new ImageBuilder(baseManifest, baseConfigJson);
-            ConfigureImage(builder);
-
-            // Build and add one layer per populated subdir. Each directory becomes one Docker
-            // layer — that's the whole point.
-            foreach (var layerName in existingLayers)
-            {
-                var layerDir = Path.Combine(PublishDirectory, layerName);
-                Log.LogMessage(MessageImportance.High,
-                    "NMica: tarring layer '{0}' from {1}", layerName, layerDir);
-                var layer = Layer.FromDirectory(layerDir, WorkingDirectory, builder.ManifestMediaType);
-                builder.AddLayer(layer);
-                Log.LogMessage(MessageImportance.High,
-                    "NMica:   → {0} ({1} bytes)", layer.Descriptor.Digest, layer.Descriptor.Size);
-            }
-
-            var built = builder.Build();
-
-            Log.LogMessage(MessageImportance.High,
-                "NMica: writing OCI archive with {0} layers to {1}",
-                built.AllLayerDescriptors.Count, ArchiveOutputPath);
-
-            await OciArchiveWriter.WriteAsync(new OciArchiveWriter.WriteRequest(
-                Image: built,
-                BaseImageRef: baseRef,
-                Registry: registry,
-                OutputPath: ArchiveOutputPath,
-                Tags: tagValues));
-
-            GeneratedArchiveOutputPath = ArchiveOutputPath;
-            GeneratedContainerManifest = built.ManifestJson;
-            GeneratedContainerConfiguration = built.ImageConfigJson;
-            GeneratedContainerDigest = built.ManifestDigest;
-            GeneratedContainerMediaType = built.Manifest.MediaType!;
-            GeneratedContainerNames = tagValues
-                .Select(t => (ITaskItem)new TaskItem($"{Repository}:{t}"))
-                .ToArray();
-            return true;
+            Log.LogError(
+                "NMica expected a layered publish directory at '{0}' with package/earlypackage/project/app " +
+                "subdirectories but found none. Set <NMicaOverridePublishContainer>false</NMicaOverridePublishContainer> " +
+                "to fall back to the SDK's single-layer CreateNewImage.", PublishDirectory);
+            return false;
         }
 
-        private void ConfigureImage(ImageBuilder builder)
+        // --- Pull base image manifest + config (same as SDK CreateNewImage) ---
+        var sourceMode = BaseRegistry.Equals(OutputRegistry, StringComparison.InvariantCultureIgnoreCase)
+            ? RegistryMode.PullFromOutput
+            : RegistryMode.Pull;
+        Registry? sourceRegistry = string.IsNullOrWhiteSpace(BaseRegistry) ? null : new Registry(BaseRegistry, logger, sourceMode);
+        if (sourceRegistry is null)
         {
-            if (!string.IsNullOrEmpty(WorkingDirectory))
-                builder.SetWorkingDirectory(WorkingDirectory);
-            if (!string.IsNullOrEmpty(ContainerUser))
-                builder.SetUser(ContainerUser);
-            foreach (var env in ContainerEnvironmentVariables)
-                builder.AddEnvironmentVariable($"{env.ItemSpec}={env.GetMetadata("Value")}");
-            foreach (var port in ExposedPorts)
-            {
-                var proto = port.GetMetadata("Type");
-                var spec = string.IsNullOrEmpty(proto) ? $"{port.ItemSpec}/tcp" : $"{port.ItemSpec}/{proto}";
-                builder.ExposePort(spec);
-            }
-            foreach (var label in Labels)
-                builder.AddLabel(label.ItemSpec, label.GetMetadata("Value"));
-
-            var (entrypoint, cmd) = ResolveEntrypointAndCmd();
-            builder.SetEntrypointAndCmd(entrypoint, cmd);
+            throw new NotSupportedException(Resource.GetString(nameof(Strings.ImagePullNotSupported)));
         }
 
-        private (IEnumerable<string>? entrypoint, IEnumerable<string>? cmd) ResolveEntrypointAndCmd()
+        var sourceRef = new SourceImageReference(sourceRegistry, BaseImageName, BaseImageTag, BaseImageDigest);
+        var destRef = DestinationImageReference.CreateFromSettings(
+            Repository, ImageTags, loggerFactory, ArchiveOutputPath, OutputRegistry, LocalRegistry);
+
+        var telemetry = new Telemetry(sourceRef, destRef, Log);
+
+        ImageBuilder? imageBuilder;
+        try
         {
-            var entryParts = Entrypoint.Select(i => i.ItemSpec).Concat(EntrypointArgs.Select(i => i.ItemSpec)).ToList();
-            var cmdParts = AppCommand.Select(i => i.ItemSpec).Concat(AppCommandArgs.Select(i => i.ItemSpec)).ToList();
-            return (
-                entryParts.Count > 0 ? entryParts : null,
-                cmdParts.Count > 0 ? cmdParts : null
-            );
+            var picker = new RidGraphManifestPicker(RuntimeIdentifierGraphPath);
+            imageBuilder = await sourceRegistry.GetImageManifestAsync(
+                BaseImageName, sourceRef.Reference, ContainerRuntimeIdentifier, picker, ct).ConfigureAwait(false);
+        }
+        catch (RepositoryNotFoundException)
+        {
+            Log.LogErrorWithCodeFromResources(nameof(Strings.RepositoryNotFound), BaseImageName, BaseImageTag, BaseImageDigest, sourceRegistry.RegistryName);
+            return false;
+        }
+        catch (UnableToAccessRepositoryException)
+        {
+            Log.LogErrorWithCodeFromResources(nameof(Strings.UnableToAccessRepository), BaseImageName, sourceRegistry.RegistryName);
+            return false;
+        }
+        catch (ContainerHttpException e)
+        {
+            Log.LogErrorFromException(e, showStackTrace: false, showDetail: true, file: null);
+            return false;
         }
 
-        private string[] ResolveTags()
+        if (imageBuilder is null)
         {
-            var tags = ImageTags
-                .Select(t => t.ItemSpec)
-                .Where(s => !string.IsNullOrEmpty(s))
-                .ToArray();
-            return tags.Length > 0 ? tags : new[] { "latest" };
+            Log.LogErrorWithCodeFromResources(nameof(Strings.BaseImageNotFound), sourceRef, ContainerRuntimeIdentifier);
+            return false;
         }
 
-        // -------------- Legacy docker-build fallback (for local daemon / remote push) --------------
-
-        private bool ExecuteDockerBuildFallback(IList<string> existingLayers)
+        // Honor ContainerImageFormat if set
+        if (Enum.TryParse<KnownImageFormats>(ImageFormat, out var fmt))
         {
-            var dockerfilePath = Path.Combine(PublishDirectory, "Dockerfile.nmica");
-            File.WriteAllText(dockerfilePath, BuildDockerfile(existingLayers));
-            Log.LogMessage(MessageImportance.High, "NMica wrote layered Dockerfile -> {0}", dockerfilePath);
-
-            var repoRef = string.IsNullOrEmpty(OutputRegistry)
-                ? Repository
-                : $"{OutputRegistry.TrimEnd('/')}/{Repository}";
-            var tagValues = ResolveTags();
-            var primaryTag = $"{repoRef}:{tagValues[0]}";
-
-            var buildArgs = new StringBuilder();
-            buildArgs.Append($"build -t \"{primaryTag}\"");
-            foreach (var t in tagValues.Skip(1))
+            imageBuilder.ManifestMediaType = fmt switch
             {
-                buildArgs.Append($" -t \"{repoRef}:{t}\"");
-            }
-            buildArgs.Append($" -f \"{dockerfilePath}\" \"{PublishDirectory}\"");
-
-            if (!RunDocker(buildArgs.ToString())) return false;
-
-            if (!string.IsNullOrEmpty(OutputRegistry))
-            {
-                foreach (var t in tagValues)
-                {
-                    if (!RunDocker($"push \"{repoRef}:{t}\"")) return false;
-                }
-            }
-
-            GeneratedContainerNames = tagValues
-                .Select(t => (ITaskItem)new TaskItem($"{repoRef}:{t}"))
-                .ToArray();
-            return true;
-        }
-
-        private string BuildDockerfile(IList<string> layers)
-        {
-            var sb = new StringBuilder();
-
-            var baseRef = string.IsNullOrEmpty(BaseRegistry)
-                ? $"{BaseImageName}:{BaseImageTag}"
-                : $"{BaseRegistry.TrimEnd('/')}/{BaseImageName}:{BaseImageTag}";
-            sb.AppendLine($"FROM {baseRef}");
-
-            if (!string.IsNullOrEmpty(WorkingDirectory))
-                sb.AppendLine($"WORKDIR {WorkingDirectory}");
-            if (!string.IsNullOrEmpty(ContainerUser))
-                sb.AppendLine($"USER {ContainerUser}");
-
-            foreach (var layer in layers)
-                sb.AppendLine($"COPY {layer}/ ./");
-
-            foreach (var port in ExposedPorts)
-            {
-                var proto = port.GetMetadata("Type");
-                sb.Append("EXPOSE ").Append(port.ItemSpec);
-                if (!string.IsNullOrEmpty(proto)) sb.Append('/').Append(proto);
-                sb.AppendLine();
-            }
-
-            foreach (var env in ContainerEnvironmentVariables)
-                sb.AppendLine($"ENV {env.ItemSpec}={Quote(env.GetMetadata("Value"))}");
-
-            foreach (var label in Labels)
-                sb.AppendLine($"LABEL {label.ItemSpec}={Quote(label.GetMetadata("Value"))}");
-
-            var (entrypoint, _) = ResolveEntrypointAndCmd();
-            if (entrypoint is not null)
-            {
-                var parts = entrypoint.ToList();
-                sb.AppendLine("ENTRYPOINT [" + string.Join(", ", parts.Select(p => $"\"{p}\"")) + "]");
-            }
-
-            return sb.ToString();
-        }
-
-        private bool RunDocker(string args)
-        {
-            Log.LogMessage(MessageImportance.High, "$ docker {0}", args);
-            var psi = new ProcessStartInfo("docker", args)
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
+                KnownImageFormats.Docker => SchemaTypes.DockerManifestV2,
+                KnownImageFormats.OCI => SchemaTypes.OciManifestV1,
+                _ => imageBuilder.ManifestMediaType,
             };
-            Process proc;
-            try
-            {
-                proc = Process.Start(psi)!;
-            }
-            catch (Exception e)
-            {
-                Log.LogError("Could not start docker (is it installed and on PATH?): {0}", e.Message);
-                return false;
-            }
-
-            using (proc)
-            {
-                var stdout = proc.StandardOutput.ReadToEndAsync();
-                var stderr = proc.StandardError.ReadToEndAsync();
-                proc.WaitForExit();
-                if (!string.IsNullOrEmpty(stdout.Result))
-                    Log.LogMessage(MessageImportance.Normal, stdout.Result);
-                if (!string.IsNullOrEmpty(stderr.Result))
-                    Log.LogMessage(MessageImportance.High, stderr.Result);
-                if (proc.ExitCode != 0)
-                {
-                    Log.LogError("docker exited with code {0}", proc.ExitCode);
-                    return false;
-                }
-            }
-            return true;
         }
 
-        private static string Quote(string s) => "\"" + s.Replace("\"", "\\\"") + "\"";
+        // --- THE ONE INTERESTING CHANGE vs the SDK's CreateNewImage ---
+        // SDK does: Layer.FromDirectory(PublishDirectory, ...); imageBuilder.AddLayer(newLayer);
+        // We iterate the layer subdirectories instead, giving the final image N separate layers
+        // ordered by change frequency.
+        var userId = imageBuilder.IsWindows ? null : ContainerBuilder.TryParseUserId(ContainerUser);
+        foreach (var layerDir in layerDirs)
+        {
+            var layer = Layer.FromDirectory(layerDir, WorkingDirectory, imageBuilder.IsWindows, imageBuilder.ManifestMediaType, userId);
+            imageBuilder.AddLayer(layer);
+            Log.LogMessage(MessageImportance.Normal,
+                "NMica: added layer {0} → {1} ({2} bytes)",
+                Path.GetFileName(layerDir), layer.Descriptor.Digest, layer.Descriptor.Size);
+        }
+        imageBuilder.SetWorkingDirectory(WorkingDirectory);
+
+        var (entry, cmd) = DetermineEntrypointAndCmd(imageBuilder.BaseImageConfig.GetEntrypoint());
+        imageBuilder.SetEntrypointAndCmd(entry, cmd);
+
+        if (GenerateLabels)
+        {
+            foreach (var label in Labels) imageBuilder.AddLabel(label.ItemSpec, label.GetMetadata("Value"));
+            if (GenerateDigestLabel)
+            {
+                var (l, d) = imageBuilder.AddBaseImageDigestLabel();
+                var item = new TaskItem(l);
+                item.SetMetadata("Value", d);
+                GeneratedDigestLabel = item;
+            }
+        }
+
+        foreach (var env in ContainerEnvironmentVariables)
+            imageBuilder.AddEnvironmentVariable(env.ItemSpec, env.GetMetadata("Value"));
+
+        foreach (var port in ExposedPorts)
+        {
+            if (ContainerHelpers.TryParsePort(port.ItemSpec, port.GetMetadata("Type"), out var parsed, out _))
+                imageBuilder.ExposePort(parsed.Value.Number, parsed.Value.Type);
+        }
+
+        if (!string.IsNullOrEmpty(ContainerUser)) imageBuilder.SetUser(ContainerUser);
+
+        if (Log.HasLoggedErrors) return false;
+
+        var builtImage = imageBuilder.Build();
+        ct.ThrowIfCancellationRequested();
+
+        GeneratedContainerManifest = builtImage.Manifest;
+        GeneratedContainerConfiguration = builtImage.Config;
+        GeneratedContainerDigest = builtImage.ManifestDigest;
+        GeneratedArchiveOutputPath = ArchiveOutputPath;
+        GeneratedContainerMediaType = builtImage.ManifestMediaType;
+        GeneratedContainerNames = destRef.FullyQualifiedImageNames()
+            .Select(n => (ITaskItem)new TaskItem(n))
+            .ToArray();
+
+        if (!SkipPublishing)
+        {
+            await ImagePublisher.PublishImageAsync(builtImage, sourceRef, destRef, Log, telemetry, ct).ConfigureAwait(false);
+        }
+
+        return !Log.HasLoggedErrors;
+    }
+
+    private (string[] entrypoint, string[] cmd) DetermineEntrypointAndCmd(string[]? baseEntrypoint)
+    {
+        return ImageBuilder.DetermineEntrypointAndCmd(
+            entrypoint: Entrypoint.Select(i => i.ItemSpec).ToArray(),
+            entrypointArgs: EntrypointArgs.Select(i => i.ItemSpec).ToArray(),
+            cmd: DefaultArgs.Select(i => i.ItemSpec).ToArray(),
+            appCommand: AppCommand.Select(i => i.ItemSpec).ToArray(),
+            appCommandArgs: AppCommandArgs.Select(i => i.ItemSpec).ToArray(),
+            appCommandInstruction: AppCommandInstruction,
+            baseImageEntrypoint: baseEntrypoint,
+            logWarning: s => Log.LogWarningWithCodeFromResources(s),
+            logError: (s, a) => { if (a is null) Log.LogErrorWithCodeFromResources(s); else Log.LogErrorWithCodeFromResources(s, a); });
     }
 }

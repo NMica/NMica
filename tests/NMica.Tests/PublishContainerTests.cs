@@ -20,12 +20,13 @@ namespace NMica.Tests
     public class PublishContainerTests : BaseTests
     {
         /// <summary>
-        /// Docker-daemon fallback path: `dotnet publish /t:PublishContainer` → NMica generates
-        /// layered Dockerfile → shells `docker build` → image lands in local daemon.
-        /// Verifies via `docker inspect` that the resulting image has more layers than the base.
+        /// Local-daemon output path: `dotnet publish /t:PublishContainer` → SDK + NMica's
+        /// multi-layer override produce an image that lands in the local Docker daemon via
+        /// <c>docker load</c> (of a docker-save tarball the SDK emits internally). We verify
+        /// via `docker inspect` that the resulting image has more layers than the base.
         /// </summary>
         [Test]
-        public async Task PublishContainer_DaemonFallback_ProducesMultiLayerImage()
+        public async Task PublishContainer_LocalDaemon_ProducesMultiLayerImage()
         {
             var imageName = $"nmica-test-{TestName[..16].ToLowerInvariant()}";
             const string imageTag = "latest";
@@ -44,12 +45,6 @@ namespace NMica.Tests
                 await Assert.That(publish.ExitCode).IsEqualTo(0);
 
                 var publishDir = Path.Combine(TestDir, "app1", "bin", "Release", "net10.0", "publish");
-                var dockerfile = Path.Combine(publishDir, "Dockerfile.nmica");
-                await Assert.That(File.Exists(dockerfile)).IsTrue();
-
-                var dockerfileContent = await File.ReadAllTextAsync(dockerfile);
-                await Assert.That(dockerfileContent).Contains("COPY package/ ./");
-                await Assert.That(dockerfileContent).Contains("COPY app/ ./");
 
                 // Count layers on the final image vs the base to confirm NMica added ≥N.
                 var (totalLayers, baseLayers) = await GetLayerCountsAsync(imageRef, "mcr.microsoft.com/dotnet/runtime:10.0");
@@ -84,6 +79,7 @@ namespace NMica.Tests
                 $"-p:ContainerImageName={imageName}",
                 $"-p:ContainerImageTag={imageTag}",
                 $"-p:ContainerArchiveOutputPath={archivePath}",
+                "-p:ContainerImageFormat=OCI",       // force oci-layout archive
                 csproj);
             await Assert.That(publish.ExitCode).IsEqualTo(0);
             await Assert.That(File.Exists(archivePath)).IsTrue();

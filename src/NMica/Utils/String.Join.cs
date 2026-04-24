@@ -38,7 +38,7 @@ namespace NMica.Utils
         {
             var valuesList = values.ToArray();
             return valuesList.Length >= 2
-                ? valuesList.Reverse().Skip(1).Reverse().JoinComma() + ", or " + valuesList.Last()
+                ? Enumerable.Reverse(valuesList).Skip(1).Reverse().JoinComma() + ", or " + valuesList.Last()
                 : valuesList.JoinComma();
         }
 
@@ -47,7 +47,7 @@ namespace NMica.Utils
         {
             var valuesList = values.ToArray();
             return valuesList.Length >= 2
-                ? valuesList.Reverse().Skip(1).Reverse().JoinComma() + ", and " + valuesList.Last()
+                ? Enumerable.Reverse(valuesList).Skip(1).Reverse().JoinComma() + ", and " + valuesList.Last()
                 : valuesList.JoinComma();
         }
 

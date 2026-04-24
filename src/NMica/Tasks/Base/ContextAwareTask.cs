@@ -12,7 +12,7 @@ namespace NMica.Tasks.Base
     /// Runs the task body inside an isolated <see cref="AssemblyLoadContext"/> so private
     /// dependencies (e.g. Newtonsoft.Json) don't clash with assemblies MSBuild already loaded.
     /// </summary>
-    public abstract class ContextAwareTask : Task
+    public abstract class ContextAwareTask : Microsoft.Build.Utilities.Task
     {
         public override bool Execute()
         {

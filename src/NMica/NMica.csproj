@@ -1,44 +1,89 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
-        <!-- net8.0 gives us System.Formats.Tar for OCI layer creation. MSBuild in dotnet SDK 8+
-             runs on net8.0+, so the task assembly loads fine. We no longer need netstandard2.0
-             compatibility since .NET Framework MSBuild support was removed earlier. -->
-        <TargetFramework>net8.0</TargetFramework>
+        <!-- net9.0 (not net8.0) because linked SDK sources use Convert.ToHexStringLower which
+             was added in .NET 9. MSBuild in SDK 9+ runs on net9.0+, so the task loads cleanly. -->
+        <TargetFramework>net9.0</TargetFramework>
         <LangVersion>latest</LangVersion>
         <Nullable>annotations</Nullable>
-        <!-- Legacy code has plenty of nullability gaps; we annotate but don't enforce for now. -->
-        <NoWarn>$(NoWarn);CS8600;CS8601;CS8602;CS8603;CS8604;CS8618;CS8619</NoWarn>
-        <!-- Pack main assembly + its runtime-required dependencies (Newtonsoft.Json) into tasks/<tfm>/
-             instead of the default lib/<tfm>/. This is the conventional layout for MSBuild task packages. -->
+        <ImplicitUsings>enable</ImplicitUsings>
+        <NoWarn>$(NoWarn);CS8600;CS8601;CS8602;CS8603;CS8604;CS8618;CS8619;NU5100;NU5128;NU1903</NoWarn>
+
         <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
         <BuildOutputTargetFolder>tasks</BuildOutputTargetFolder>
         <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
-        <NoWarn>NU5100;NU5128;NU1903</NoWarn>
-        <!-- Our custom target adds Newtonsoft.Json alongside NMica.dll in the package. Running
-             through this hook (not TargetsForTfmSpecificContentInPackage) keeps it tied to the
-             normal build-output packaging phase, which runs after Build completes. -->
         <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);_PackTaskRuntimeAssemblies</TargetsForTfmSpecificBuildOutput>
 
         <PackageOutputPath>$(MSBuildThisFileDirectory)..\..\artifacts\</PackageOutputPath>
-        <!-- Local-build default; Nuke's Pack target overrides Version for releases. -->
         <Version Condition="'$(Version)' == '' or '$(Version)' == '1.0.0'">1.0.0-test</Version>
 
         <PackageId>NMica</PackageId>
         <Authors>Andrew Stakhov</Authors>
-        <Description>Automates Dockerfile generation for .NET Core projects</Description>
+        <Description>Multi-layer container images for .NET via PublishContainer — multi-COPY Dockerfile generation + SDK-linked OCI writer.</Description>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageProjectUrl>http://github.com/NMica/NMica</PackageProjectUrl>
         <RepositoryUrl>http://github.com/NMica/NMica</RepositoryUrl>
         <Copyright>Copyright 2026</Copyright>
+
+        <!-- Root of the pinned dotnet/sdk submodule checkout. We source-link files from inside
+             external/dotnet-sdk/src/Containers/Microsoft.NET.Build.Containers/ rather than
+             maintain our own mirrored copies. -->
+        <SdkContainersRoot>$(MSBuildThisFileDirectory)..\..\external\dotnet-sdk\src\Containers\Microsoft.NET.Build.Containers</SdkContainersRoot>
     </PropertyGroup>
 
+    <!-- Global usings the SDK assumes (declared in their root Directory.Build.props, not in
+         their csproj). Without these the linked files fail to find Encoding, StringBuilder,
+         RuntimeInformation, etc. -->
     <ItemGroup>
+        <Using Include="System.Runtime.InteropServices" />
+        <Using Include="System.Text" />
+        <Using Include="System.Xml.Linq" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- MSBuild API — always ambient in the task host. -->
         <PackageReference Include="Microsoft.Build.Tasks.Core" Version="17.14.8" PrivateAssets="all" ExcludeAssets="runtime" />
+
+        <!-- SDK-ambient deps. All of these are loaded into the MSBuild process before our task
+             runs (ParseContainerProperties and ComputeContainerBaseImage execute first and live
+             in the SDK's Microsoft.NET.Build.Containers.dll, which pulls them in). We reference
+             them for compile-time API only; runtime uses whatever the SDK already has loaded. -->
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" PrivateAssets="all" ExcludeAssets="runtime" />
+        <PackageReference Include="NuGet.Packaging" Version="6.12.1" PrivateAssets="all" ExcludeAssets="runtime" />
+        <PackageReference Include="Valleysoft.DockerCredsProvider" Version="2.1.0" PrivateAssets="all" ExcludeAssets="runtime" />
+
+        <!-- Bundled runtime dep (not in SDK's load set, we ship it). -->
         <PackageReference Include="Newtonsoft.Json" Version="13.0.3" PrivateAssets="all" />
     </ItemGroup>
 
-    <!-- Consumer-side MSBuild integration. NuGet auto-imports build/<PackageId>.{props,targets}
-         in the package root, so these files land where consumers expect them. -->
+    <!-- Link SDK source files verbatim. Exclude:
+           - Tasks/** — we provide our own task wrappers in a shadow namespace
+           - Resources/Strings.Designer.cs — linked separately so the Link path is predictable
+           - ContainerBuilder.cs, ImagePublisher.cs, ImageIndexGenerator.cs — task-layer
+             orchestrators that pull in MSBuild-specific types
+           - Telemetry.cs, VSHostObject.cs — MS-internal reporting
+           - Globals.cs — carries [InternalsVisibleTo] attributes that don't apply to us
+           - net472Definitions.cs — polyfills for .NET Framework; we target net8.0 only
+
+         DockerCli.cs and RegistrySettings.cs depend on Microsoft.DotNet.Cli.Utils (an
+         unpublished SDK-internal library). Rather than forking those files, we provide a
+         minimal Microsoft.DotNet.Cli.Utils namespace shim in src/NMica/Vendor/CliUtilsShim.cs
+         so the upstream source compiles verbatim. -->
+    <ItemGroup>
+        <Compile Include="$(SdkContainersRoot)\**\*.cs"
+                 Exclude="$(SdkContainersRoot)\Tasks\**;
+                          $(SdkContainersRoot)\Resources\Strings.Designer.cs;
+                          $(SdkContainersRoot)\Globals.cs;
+                          $(SdkContainersRoot)\net472Definitions.cs"
+                 LinkBase="Vendor" />
+
+        <Compile Include="$(SdkContainersRoot)\Resources\Strings.Designer.cs"
+                 Link="Vendor\Resources\Strings.Designer.cs" />
+
+        <EmbeddedResource Include="$(SdkContainersRoot)\Resources\Strings.resx"
+                          LogicalName="Microsoft.NET.Build.Containers.Resources.Strings.resources" />
+    </ItemGroup>
+
+    <!-- Consumer-side MSBuild integration. NuGet auto-imports build/<PackageId>.{props,targets}. -->
     <ItemGroup>
         <None Include="build\**\*" Pack="true" PackagePath="build\" />
     </ItemGroup>
