@@ -152,66 +152,14 @@ Deeper write-up: https://stakhov.pro/building-efficient-net-docker-images/
 
 ## Build (contributors)
 
-NMica does not maintain its own copy of the OCI-image-writing machinery — the bulk of the container logic is **linked** from a sparse git submodule of [`dotnet/sdk`](https://github.com/dotnet/sdk) at `external/dotnet-sdk/`. The MSBuild task is the thin bit we actually own (~200 LoC of shims + the one-line "multi-layer" change); the ~5 KLoC that implements tar/gzip/registry/auth all sits in the SDK repo, pinned to a specific tag.
-
-The `dotnet/sdk` repo is large (~1.5 GB with full history). The `.gitmodules` entry marks the submodule `shallow = true` so normal `submodule update` operations stay cheap.
-
-### First clone
-
 ```sh
-# Preferred: clone the main repo AND every submodule shallow in one pass
 git clone --recurse-submodules --shallow-submodules <this-repo-url>
-
-# Or, if you already cloned without --recurse-submodules:
-git submodule update --init --depth 1
+cd <repo>
+dotnet build
+dotnet test
 ```
 
-`--shallow-submodules` is the key flag — it passes `--depth 1` to each submodule's init. Without it, submodules default to a full clone and pull the SDK's entire history even though only `src/Containers/` is checked out (~3.7 MB) on disk.
-
-### If you forgot the flag and already have a deep checkout
-
-Strip the history retroactively:
-
-```sh
-git -C external/dotnet-sdk fetch --depth 1 origin $(git -C external/dotnet-sdk rev-parse HEAD)
-git -C external/dotnet-sdk reflog expire --expire=now --all
-git -C external/dotnet-sdk gc --prune=now
-```
-
-### When *not* to use shallow
-
-Shallow submodules can't easily track a branch's HEAD (fetching newer commits fails if the shallow graft doesn't include the base). NMica pins to a specific tag rather than tracking `main`, so shallow is fine for us. If you want to dig through upstream SDK history for any reason, make the submodule deep on demand:
-
-```sh
-git -C external/dotnet-sdk fetch --unshallow
-```
-
-### Bumping the pinned SDK version
-
-```sh
-cd external/dotnet-sdk
-git fetch --depth 1 origin tag v<new-tag>
-git checkout v<new-tag>
-cd ../..
-git add external/dotnet-sdk
-git commit -m "Bump dotnet/sdk submodule to v<new-tag>"
-```
-
-Reference on shallow submodule mechanics: <https://stackoverflow.com/questions/2144406/how-to-make-shallow-git-submodules>.
-
-### Project layout
-
-| Path | What it is |
-|---|---|
-| `external/dotnet-sdk/` | Sparse+shallow submodule of `dotnet/sdk`; only `src/Containers/Microsoft.NET.Build.Containers/` is checked out. |
-| `src/NMica/NMica.csproj` | Glob-links every `.cs` under the SDK Containers dir (minus the Tasks layer and IVT attributes). All SDK deps (`Microsoft.Extensions.Logging.Abstractions`, `NuGet.Packaging`, `Valleysoft.DockerCredsProvider`) are `ExcludeAssets="runtime"` — they're ambient in the MSBuild host process by the time our task runs. |
-| `src/NMica/Vendor/CliUtilsShim.cs` | ~70 LoC namespace shim for `Microsoft.DotNet.Cli.Utils` (an unpublished SDK-internal library). Lets the SDK's `DockerCli.cs` and `RegistrySettings.cs` compile verbatim. |
-| `src/NMica/Vendor/MSBuildLogger.cs` | ~80 LoC adapter from `Microsoft.Extensions.Logging.ILogger` to `TaskLoggingHelper`. |
-| `src/NMica/Tasks/CreateNewImageOverride.cs` | Near-verbatim copy of the SDK's `CreateNewImage` task. **The one interesting difference**: iterate `package/earlypackage/project/app` subdirectories and call `Layer.FromDirectory` + `imageBuilder.AddLayer` per bucket instead of once on `$(PublishDir)`. |
-| `src/NMica/Tasks/{PublishLayer,GenerateDockerfile,CleanPublish,Layers}.cs` | Our own MSBuild tasks — ~350 LoC total. |
-| `src/NMica/build/NMica.{props,targets}` | NuGet-consumer-side MSBuild integration. Registers the `UsingTask` override + the `BeforeTargets="_PublishSingleContainer"` layer-prep hook. |
-
-The NuGet package itself ships one file: `tasks/net10.0/NMica.dll`. Every dependency is either in the BCL or pulled from MSBuild's ambient load context at runtime.
+NMica source-links parts of [`dotnet/sdk`](https://github.com/dotnet/sdk) as a submodule at `external/dotnet-sdk/`; `--shallow-submodules` keeps the clone fast (skipping the SDK's ~1.5 GB history). If you already cloned without it, `git submodule update --init --depth 1` retrofits.
 
 ## Roadmap
 
