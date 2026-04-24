@@ -1,17 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
-        <!-- net9.0 (not net8.0) because linked SDK sources use Convert.ToHexStringLower which
-             was added in .NET 9. MSBuild in SDK 9+ runs on net9.0+, so the task loads cleanly. -->
-        <TargetFramework>net9.0</TargetFramework>
+        <!-- .NET 10 is the minimum supported SDK (previous LTS cycles are out of support or
+             about to be). Task loads in the .NET 10 MSBuild runtime; consumers need SDK 10.0.200+. -->
+        <TargetFramework>net10.0</TargetFramework>
         <LangVersion>latest</LangVersion>
         <Nullable>annotations</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <NoWarn>$(NoWarn);CS8600;CS8601;CS8602;CS8603;CS8604;CS8618;CS8619;NU5100;NU5128;NU1903</NoWarn>
 
-        <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+        <!-- Every external dep is ExcludeAssets=runtime (ambient in MSBuild's process), so the
+             package contains only NMica.dll itself. -->
         <BuildOutputTargetFolder>tasks</BuildOutputTargetFolder>
         <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
-        <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);_PackTaskRuntimeAssemblies</TargetsForTfmSpecificBuildOutput>
 
         <PackageOutputPath>$(MSBuildThisFileDirectory)..\..\artifacts\</PackageOutputPath>
         <Version Condition="'$(Version)' == '' or '$(Version)' == '1.0.0'">1.0.0-test</Version>
@@ -50,9 +50,6 @@
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" PrivateAssets="all" ExcludeAssets="runtime" />
         <PackageReference Include="NuGet.Packaging" Version="6.12.1" PrivateAssets="all" ExcludeAssets="runtime" />
         <PackageReference Include="Valleysoft.DockerCredsProvider" Version="2.1.0" PrivateAssets="all" ExcludeAssets="runtime" />
-
-        <!-- Bundled runtime dep (not in SDK's load set, we ship it). -->
-        <PackageReference Include="Newtonsoft.Json" Version="13.0.3" PrivateAssets="all" />
     </ItemGroup>
 
     <!-- Link SDK source files verbatim. Exclude:
@@ -88,9 +85,4 @@
         <None Include="build\**\*" Pack="true" PackagePath="build\" />
     </ItemGroup>
 
-    <Target Name="_PackTaskRuntimeAssemblies">
-        <ItemGroup>
-            <BuildOutputInPackage Include="$(OutputPath)Newtonsoft.Json.dll" />
-        </ItemGroup>
-    </Target>
 </Project>

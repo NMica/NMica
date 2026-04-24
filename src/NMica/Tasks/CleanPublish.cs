@@ -3,42 +3,46 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using Microsoft.Build.Framework;
-using NMica.Tasks.Base;
 
-namespace NMica.Tasks
+namespace NMica.Tasks;
+
+/// <summary>
+/// Empties <see cref="PublishDir"/> before a partial <see cref="PublishLayer"/> run. Retries on
+/// transient <see cref="IOException"/> / <see cref="UnauthorizedAccessException"/> because
+/// Windows / antivirus / indexers sometimes hold files briefly after a prior build.
+/// </summary>
+public class CleanPublishDir : Microsoft.Build.Utilities.Task
 {
-    public class CleanPublishDir  : ContextAwareTask
+    private const int MaxRetry = 10;
+
+    [Required]
+    public string PublishDir { get; set; } = "";
+
+    public override bool Execute()
     {
-        private const int MaxRetry = 10;
-        public string PublishDir { get; set; }
-
-        protected override bool ExecuteInner()
+        Log.LogMessage(MessageImportance.High, "Cleaning publish folder");
+        if (Directory.Exists(PublishDir) && Directory.EnumerateFileSystemEntries(PublishDir).Any())
         {
-            Log.LogMessage(MessageImportance.High, "Cleaning publish folder");
-            if (Directory.Exists(PublishDir) && Directory.EnumerateFileSystemEntries(PublishDir).Any())
-            {
-                DeletePublishDir();
-                Directory.CreateDirectory(PublishDir);
-            }
-
-            return true;
+            DeletePublishDir();
+            Directory.CreateDirectory(PublishDir);
         }
+        return true;
+    }
 
-        private void DeletePublishDir() {
-            for (var retry = 1; retry <= MaxRetry; retry++) {
-                try {
-                    Directory.Delete(PublishDir, true);
-                } catch (DirectoryNotFoundException) {
-                    return;
-                } catch (Exception e) {
-                    if (!(e is IOException) && !(e is UnauthorizedAccessException)) throw;
-                    System.Diagnostics.Debug.WriteLine("Prevented from deletion of {0}! Attempt #{1}.", PublishDir, retry);
-
-                    // see http://stackoverflow.com/questions/329355/cannot-delete-directory-with-directory-deletepath-true for more magic
-                    Thread.Sleep(50);
-                    continue;
-                }
+    private void DeletePublishDir()
+    {
+        for (var retry = 1; retry <= MaxRetry; retry++)
+        {
+            try
+            {
+                Directory.Delete(PublishDir, recursive: true);
                 return;
+            }
+            catch (DirectoryNotFoundException) { return; }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                System.Diagnostics.Debug.WriteLine("Prevented from deletion of {0}! Attempt #{1}.", PublishDir, retry);
+                Thread.Sleep(50);
             }
         }
     }

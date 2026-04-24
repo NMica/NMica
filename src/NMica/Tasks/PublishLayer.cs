@@ -1,166 +1,150 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
 using Microsoft.Build.Framework;
-using Newtonsoft.Json.Linq;
-using NMica.Tasks.Base;
-using NMica.Utils;
+using Microsoft.Build.Utilities;
 
-namespace NMica.Tasks
+namespace NMica.Tasks;
+
+/// <summary>
+/// Partitions the freshly-published output in <see cref="PublishDir"/> into
+/// <c>package/</c>, <c>earlypackage/</c>, <c>project/</c>, and <c>app/</c> subdirectories —
+/// one "layer bucket" per bullet. The classification is driven entirely by MSBuild item
+/// metadata that the SDK already computes during restore; we no longer parse
+/// <c>project.assets.json</c>.
+/// </summary>
+/// <remarks>
+/// <para><b>Inputs.</b> Every file in the publish output (<see cref="ResolvedFilesToPublish"/>,
+/// usually <c>@(ResolvedFileToPublish)</c>) carries <c>%(NuGetPackageId)</c> /
+/// <c>%(NuGetPackageVersion)</c> metadata set by the SDK's <c>ResolvePackageAssets</c> task
+/// (see <c>ResolvePackageAssets.cs:1838</c>) for every asset that originated in a NuGet
+/// package. Items from project references and from the project itself carry no such metadata,
+/// so we tell project-origin from app-origin via
+/// <see cref="ProjectReferenceAssemblies"/> (usually
+/// <c>@(_ResolvedProjectReferencePaths)</c>).</para>
+///
+/// <para><b>Classification.</b></para>
+/// <list type="bullet">
+///   <item><description>Pre-release package (version contains <c>-</c>) → <c>earlypackage/</c></description></item>
+///   <item><description>Stable package (version with no <c>-</c>) → <c>package/</c></description></item>
+///   <item><description>No package metadata, filename matches a project reference → <c>project/</c></description></item>
+///   <item><description>Everything else → <c>app/</c></description></item>
+/// </list>
+/// </remarks>
+public class PublishLayer : Microsoft.Build.Utilities.Task
 {
-    public class PublishLayer : ContextAwareTask
+    [Required]
+    public string PublishDir { get; set; } = "";
+
+    /// <summary><c>@(ResolvedFileToPublish)</c>. Every file the SDK copies to the publish dir,
+    /// with package-origin metadata intact.</summary>
+    [Required]
+    public ITaskItem[] ResolvedFilesToPublish { get; set; } = Array.Empty<ITaskItem>();
+
+    /// <summary><c>@(_ResolvedProjectReferencePaths)</c>. The resolved DLLs of direct
+    /// ProjectReferences; their filenames tell us which <see cref="ResolvedFilesToPublish"/>
+    /// entries came from project-references rather than the app's own code.</summary>
+    public ITaskItem[] ProjectReferenceAssemblies { get; set; } = Array.Empty<ITaskItem>();
+
+    /// <summary>Comma-separated layers to emit. Default <c>All</c>.</summary>
+    public string DockerLayer
     {
-        public string RuntimeIdentifier { get; set; } = "";
-        public string TargetFrameworkMoniker { get; set; } = "";
-        public string TargetFramework { get; set; } = "";
-        public string BaseIntermediateOutputPath { get; set; } = "";
-        public string PublishDir { get; set; } = "";
+        get => _layersToPublish.ToString();
+        set => _layersToPublish = string.IsNullOrEmpty(value) ? Layer.All : (Layer)Enum.Parse(typeof(Layer), value, true);
+    }
+    private Layer _layersToPublish = Layer.All;
 
-        private JObject _projectAssetsJson;
-        private List<string> _originalFiles;
+    public override bool Execute()
+    {
+        var publishPath = Path.GetFullPath(PublishDir);
+        var requestedLayers = _layersToPublish.ToValuesArray().ToHashSet();
 
-        protected string PublishPath => Path.GetFullPath(PublishDir);
+        var projectRefFilenames = ProjectReferenceAssemblies
+            .Select(i => Path.GetFileName(i.ItemSpec))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        public string DockerLayer
+        // Group each published file by its classification. %(RelativePath) is the SDK's
+        // authoritative path inside the publish dir; fall back to the item spec's basename if
+        // it's absent (shouldn't happen for items flowing from ComputeFilesToPublish, but we're
+        // defensive).
+        var byLayer = new Dictionary<Layer, List<string>>();
+        foreach (var item in ResolvedFilesToPublish)
         {
-            get => _layersToPublish.ToString(); 
-            set => _layersToPublish = string.IsNullOrEmpty(value) ? Layer.All : (Layer)Enum.Parse(typeof(Layer), value, true);
+            if (item.GetMetadata("CopyToPublishDirectory") == "Never")
+                continue;
+
+            var layer = Classify(item, projectRefFilenames);
+            if (!requestedLayers.Contains(layer)) continue;
+
+            var relative = FindRelativePath(item);
+            if (string.IsNullOrEmpty(relative)) continue;
+
+            if (!byLayer.TryGetValue(layer, out var list))
+                byLayer[layer] = list = new List<string>();
+            list.Add(relative);
         }
 
-        private Layer _layersToPublish = Layer.All;
-
-        protected override bool ExecuteInner()
+        // Always materialise every requested layer as a directory, even when classification
+        // produced no files for it. Generated Dockerfiles COPY each layer dir unconditionally
+        // (`COPY --from=build /layer/package ./`), so a missing dir breaks `docker build` for
+        // projects that e.g. have zero runtime NuGet dependencies.
+        foreach (var layer in requestedLayers)
         {
-            Initialize();
-            // var publishPath = Path.GetFullPath(PublishDir);
-            foreach (var layer in _layersToPublish.ToValuesArray())
-            {
-                PublishLayer(layer);
-            }
-            foreach (var file in _originalFiles.Where(File.Exists))
-            {
-                File.Delete(file);
-            }
-            LogToConsole(Directory.EnumerateFiles(PublishPath, string.Empty, SearchOption.AllDirectories));
-            
-            void PublishLayer(Layer layer)
-            {
-                var layerFiles = GetFilesForLayer(layer);
-            
-                var layerDir = Path.Combine(PublishPath, layer.ToString().ToLower());
-                Directory.CreateDirectory(layerDir);
-                    
-                foreach (var layerFile in layerFiles)
-                {
-                    Move(layerFile, PublishPath, layerDir);
-                }
-            }
-            
-            
-            void LogToConsole<T>(IEnumerable<T> items)
-            {
-                if (Log == null)
-                {
-                    return;
-                }
-
-                foreach (var item in items)
-                {
-                    Log.LogMessage(MessageImportance.High, item.ToString());
-                }
-            }
-            
-            void Move(string file, string basePath, string toFolder)
-            {
-                var relativePath = file.Remove(0, basePath.Length).Trim('\\');
-                var relativeFolder = Path.GetDirectoryName(relativePath);
-                Directory.CreateDirectory(Path.Combine(toFolder, relativeFolder));
-                var to = Path.Combine(toFolder, relativePath);
-                if(File.Exists(to))
-                    File.Delete(to);
-                if(File.Exists(file))
-                    File.Move(file, to);
-            }
-
-            return true;
+            var layerDir = Path.Combine(publishPath, layer.ToString().ToLowerInvariant());
+            Directory.CreateDirectory(layerDir);
         }
 
-        internal void Initialize()
+        foreach (var (layer, files) in byLayer)
         {
-            var assetsFile = Path.Combine(BaseIntermediateOutputPath, "project.assets.json");
-            
-            _projectAssetsJson = JObject.Parse(File.ReadAllText(assetsFile));
-            
-            // stores the output of publish command - these get sorted into individual layers
-            _originalFiles = Directory.EnumerateFiles(Path.Combine(Directory.GetCurrentDirectory(), PublishDir), "*", SearchOption.AllDirectories).ToList();
+            var layerDir = Path.Combine(publishPath, layer.ToString().ToLowerInvariant());
+            foreach (var relative in files)
+            {
+                var src = Path.Combine(publishPath, relative);
+                var dst = Path.Combine(layerDir, relative);
+                if (!File.Exists(src)) continue;
+
+                var dstDir = Path.GetDirectoryName(dst);
+                if (!string.IsNullOrEmpty(dstDir)) Directory.CreateDirectory(dstDir);
+
+                if (File.Exists(dst)) File.Delete(dst);
+                File.Move(src, dst);
+                Log.LogMessage(MessageImportance.Low, "NMica layer '{0}' ← {1}", layer, relative);
+            }
         }
 
-        internal IEnumerable<string> GetFilesForLayer(Layer layer)
+        return !Log.HasLoggedErrors;
+    }
+
+    private static Layer Classify(ITaskItem item, HashSet<string> projectRefFilenames)
+    {
+        var version = item.GetMetadata("NuGetPackageVersion");
+        if (!string.IsNullOrEmpty(version))
         {
-            if (layer != Layer.App)
-            {
-                return GetReferences(layer)
-                    .Select(x => Path.Combine(PublishPath, x));
-            }
-            return _originalFiles
-                .Except(KnownLayers.DependencyLayers
-                    .SelectMany(GetReferences)
-                    .Select(x => Path.Combine(PublishDir, x)))
-                .Select(Path.GetFullPath).ToList();
+            return version.Contains('-') ? Layer.EarlyPackage : Layer.Package;
         }
-        /// <summary>
-        /// Returns absolute list of files to be placed for a give layer
-        /// </summary>
-        internal List<string> GetReferences(Layer layer)
-        {
-            var targets = _projectAssetsJson["targets"];
-            var framework = targets[TargetFrameworkMoniker] ?? targets[TargetFramework];
-            var early = false;
-            if (layer == Layer.EarlyPackage)
-            {
-                layer = Layer.Package;
-                early = true;
-            }
-            
-            var dependency = framework.AsJEnumerable().Cast<JProperty>()
-                .Where(x => ((JValue)x.Value["type"]).Value.ToString() == layer.ToString().ToLower()
-                            && (x.Name.Split('/')[1].Contains("-") == early)).ToList();
-            
-            var runtimeDependency = dependency
-                .SelectMany(x => Optional(x, "runtime"))
-                .SelectMany(x => x.AsJEnumerable().Cast<JProperty>())
-                .Select(x => x.Name)
-                .Select(Path.GetFileName)
-                .Where(x => x != "_._").ToList();
-                
-            var runtimeTargetDependency = dependency
-                .SelectMany(x => Optional(x, "runtimeTargets"))
-                .SelectMany(x => x.AsJEnumerable().Cast<JProperty>())
-                .Select(property =>
-                {
-                    var localPath = property.Name;
-                    if(RuntimeIdentifier != "" && property.Value["assetType"]?.Value<string>() == "native")
-                    {
-                        // when publishing for specific RID, native assets are outputted into the root of publish folder instead of under /runtimes/<rid>/native/
-                        localPath = Regex.Replace(localPath, "^runtimes/.+?/native/", "");
-                    }
-                    return localPath.Replace('/', Path.DirectorySeparatorChar);
-                });
-            var result = runtimeDependency
-                .Union(runtimeTargetDependency)
-                .ToList();
-            return result;
-            
-        }
-        static IEnumerable<JObject> Optional(JProperty x, string property)
-        {
-            if (x.Value is JObject val && val.TryGetValue(property, StringComparison.InvariantCulture, out var runtime))
-            {
-                yield return (JObject)runtime;
-            }
-        }
+
+        var name = Path.GetFileName(item.ItemSpec);
+        if (projectRefFilenames.Contains(name))
+            return Layer.Project;
+
+        return Layer.App;
+    }
+
+    /// <summary>
+    /// Return the item's path relative to <see cref="PublishDir"/>. The SDK sets
+    /// <c>%(RelativePath)</c> / <c>%(DestinationSubPath)</c> on publish items for this purpose;
+    /// we prefer DestinationSubPath (set on <c>ResolvedFileToPublish</c>) and fall back to
+    /// RelativePath, then to the item spec's filename.
+    /// </summary>
+    private static string FindRelativePath(ITaskItem item)
+    {
+        var sub = item.GetMetadata("DestinationSubPath");
+        if (!string.IsNullOrEmpty(sub)) return sub;
+
+        var rel = item.GetMetadata("RelativePath");
+        if (!string.IsNullOrEmpty(rel)) return rel;
+
+        return Path.GetFileName(item.ItemSpec);
     }
 }

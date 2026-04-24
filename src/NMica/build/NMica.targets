@@ -26,11 +26,9 @@
 
     <Target Name="PublishLayer" DependsOnTargets="Publish;CleanPublish" Condition="$(NMicaSupportedProject)">
         <PublishLayer
-                RuntimeIdentifier="$(RuntimeIdentifier)"
-                TargetFrameworkMoniker="$(TargetFrameworkMoniker)"
-                TargetFramework="$(TargetFramework)"
-                BaseIntermediateOutputPath="$(BaseIntermediateOutputPath)"
                 PublishDir="$(PublishDir)"
+                ResolvedFilesToPublish="@(ResolvedFileToPublish)"
+                ProjectReferenceAssemblies="@(_ResolvedProjectReferencePaths)"
                 DockerLayer="$(DockerLayer)" />
     </Target>
 
@@ -49,9 +47,9 @@
                 TargetFrameworkIdentifier="$(TargetFrameworkIdentifier)"
                 AssemblyName="$(AssemblyName)"
                 MSBuildProjectFullPath="$(MSBuildProjectFullPath)"
-                BaseIntermediateOutputPath="$(BaseIntermediateOutputPath)"
                 SolutionPath="$(SolutionPath)"
-                IsExecutable="$(_IsExecutable)" />
+                IsExecutable="$(_IsExecutable)"
+                ProjectReferences="@(_MSBuildProjectReferenceExistent)" />
     </Target>
 
     <!-- PublishContainer integration. The SDK publishes content into $(PublishDir) then calls
@@ -65,11 +63,9 @@
             BeforeTargets="_PublishSingleContainer"
             Condition="'$(NMicaOverridePublishContainer)' == 'true' AND '$(NMicaSupportedProject)' == 'true'">
         <PublishLayer
-                RuntimeIdentifier="$(RuntimeIdentifier)"
-                TargetFrameworkMoniker="$(TargetFrameworkMoniker)"
-                TargetFramework="$(TargetFramework)"
-                BaseIntermediateOutputPath="$(BaseIntermediateOutputPath)"
                 PublishDir="$(PublishDir)"
+                ResolvedFilesToPublish="@(ResolvedFileToPublish)"
+                ProjectReferenceAssemblies="@(_ResolvedProjectReferencePaths)"
                 DockerLayer="All" />
     </Target>
 </Project>

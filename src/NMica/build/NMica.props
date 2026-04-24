@@ -1,7 +1,7 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <PropertyGroup>
         <NMicaToolsRootPath Condition=" '$(NMicaToolsRootPath)' == '' ">$(MSBuildThisFileDirectory)</NMicaToolsRootPath>
-        <NMicaToolsPath Condition=" '$(NMicaToolsPath)' == '' ">$(NMicaToolsRootPath)..\tasks\net9.0\NMica.dll</NMicaToolsPath>
+        <NMicaToolsPath Condition=" '$(NMicaToolsPath)' == '' ">$(NMicaToolsRootPath)..\tasks\net10.0\NMica.dll</NMicaToolsPath>
 
         <!-- Off by default; set to True on projects that want an on-disk Dockerfile generated
              next to the csproj on every build. The recommended flow is to use
