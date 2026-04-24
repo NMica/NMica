@@ -23,6 +23,15 @@ Hypothetical project: `MyApp.dll` (~200 KB), references `classlib.dll` (~80 KB),
 
 Pulls, pushes, and registry/host storage all dedupe by layer digest. Fewer, more-granular layers means fewer bytes over the wire and fewer bytes on disk.
 
+## How it layers
+
+Least → most frequently changed:
+
+- `package` — stable NuGet dependency DLLs (changes on dependency upgrades)
+- `earlypackage` — pre-release NuGet dependency DLLs (changes on nightly bumps)
+- `project` — referenced project DLLs (changes when sibling libs rebuild)
+- `app` — your code and anything else (changes every build)
+
 ## Install
 
 Add to each executable project you want containerized:
@@ -80,19 +89,7 @@ If you'd rather ship a `Dockerfile` in your repo and run `docker build` yourself
   <GenerateDockerfile>true</GenerateDockerfile>
 </PropertyGroup>
 ```
-
-Then:
-
-```sh
-dotnet build mysolution.sln
-docker build -t myapp -f src/MyApp/Dockerfile .
-```
-
-Every solution build regenerates `Dockerfile` next to each executable project. The generated Dockerfile uses `sdk:10.0+` for the build stage (so NMica's task can load) and `runtime:<your-TFM>` / `aspnet:<your-TFM>` for the runtime stage, and ends with the four per-layer `COPY` lines.
-
-#### Or hand-write your own Dockerfile
-
-The `PublishLayer` target is what the generated Dockerfile calls — and it's just as usable from a Dockerfile you wrote yourself:
+which will generate something like this:
 
 ```dockerfile
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
@@ -109,26 +106,7 @@ COPY --from=build /out/app/ ./
 ENTRYPOINT ["dotnet", "MyApp.dll"]
 ```
 
-You can also invoke `PublishLayer` standalone — useful for scripts or CI jobs that want just a subset of the layers:
-
-```sh
-# All four buckets into ./out
-dotnet msbuild /t:PublishLayer -p:DockerLayer=All -p:PublishDir=out/ MyApp.csproj
-
-# Just two buckets (combinable comma-separated)
-dotnet msbuild /t:PublishLayer -p:DockerLayer=Package,Project -p:PublishDir=out/ MyApp.csproj
-```
-
-Same caching benefit as the `PublishContainer` path either way — the Dockerfile route just gives you full control over the image recipe.
-
-## How it layers
-
-Least → most frequently changed:
-
-- `package` — stable NuGet dependency DLLs (changes on dependency upgrades)
-- `earlypackage` — pre-release NuGet dependency DLLs (changes on nightly bumps)
-- `project` — referenced project DLLs (changes when sibling libs rebuild)
-- `app` — your code and anything else (changes every build)
+- 
 
 Classification is driven entirely by MSBuild item metadata that the SDK's restore pipeline already computes (`%(NuGetPackageVersion)` on `@(ResolvedFileToPublish)`) — no `project.assets.json` parsing involved.
 
@@ -142,13 +120,18 @@ Deeper write-up: https://stakhov.pro/building-efficient-net-docker-images/
 | `GenerateDockerfile` | `false` | Opt in to have a multi-stage `Dockerfile` regenerated next to the `.csproj` on every build. Pairs with `PublishLayer` — the generated Dockerfile invokes `PublishLayer` in its build stage. Leave off if you use `PublishContainer` or ship your own Dockerfile. |
 | `DockerLayer` | _(all)_ | Passed to `PublishLayer` to pick specific layers. Values: `App`, `Package`, `EarlyPackage`, `Project`, `All` (combinable with commas). |
 
+## AOT and trimming
+
+NMica's layering relies on dependency DLLs being separate files with stable per-package content. That invariant breaks under:
+
+- `PublishAot=true` — the output is a single native binary; there are no dependency DLLs to layer.
+- `PublishTrimmed=true` — the trimmer rewrites dependency DLL content based on which methods the app's code actually reaches, so the "package" layer changes on every app build and caching does nothing.
+
+In both cases NMica detects the mode, emits a build warning explaining the situation, and falls back to the SDK's default single-layer `PublishContainer` behavior. No configuration needed — it just does the right thing. Set `<NMicaOverridePublishContainer>false</NMicaOverridePublishContainer>` to silence the warning if you don't want to hear about it.
+
 ## Requirements
 
-- **.NET 10 SDK or newer on the build host.** NMica's MSBuild task targets `net10.0`. Earlier LTS cycles are out of support or about to be; SDK 10 is the stated floor.
-- Your application project's `TargetFramework` can still be anything with a published `mcr.microsoft.com/dotnet/runtime` image (net6+, practically).
-- Built from a solution file (not a standalone csproj).
-- **For `PublishContainer` with local-daemon output**: Docker or Podman available on the build host (the SDK pipes a tarball to `docker load` / `podman load`).
-- **For `PublishContainer` with `ContainerArchiveOutputPath` or `ContainerRegistry`**: no daemon required — pure HTTPS pull of the base image + local tarball write or direct Distribution API push.
+- **.NET 10 SDK or newer
 
 ## Build (contributors)
 

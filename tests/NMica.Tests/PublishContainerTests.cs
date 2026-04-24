@@ -117,6 +117,46 @@ namespace NMica.Tests
             }
         }
 
+        /// <summary>
+        /// When the project is AOT- or trim-published, NMica must disable its multi-layer
+        /// override (layering is meaningless in those modes) and emit a warning so the user
+        /// understands why. Verifies the warning fires and no layer subdirectories are produced
+        /// under <c>$(PublishDir)</c> — meaning the SDK's single-layer path ran instead of ours.
+        /// </summary>
+        [Test]
+        public async Task PublishContainer_Trimmed_DisablesLayeringAndWarns()
+        {
+            var imageName = $"nmica-test-{TestName[..16].ToLowerInvariant()}";
+            var archivePath = Path.Combine(TestDir, "out.tar");
+
+            GenerateSampleProject();
+            var csproj = Path.Combine(TestDir, "app1", "app1.csproj");
+
+            var publish = await RunAsync("dotnet",
+                "publish", "/t:PublishContainer", "-c", "Release",
+                $"-p:ContainerRepository={imageName}",
+                "-p:ContainerImageTags=latest",
+                $"-p:ContainerArchiveOutputPath={archivePath}",
+                "-p:ContainerImageFormat=OCI",
+                "-p:PublishTrimmed=true",
+                "-r", "linux-x64",
+                "--self-contained",
+                csproj);
+
+            // The warning MUST fire — that's the whole point of the test. The publish may still
+            // fail on machines without cross-RID toolchains, but NMica's contract (warn + disable
+            // layering) doesn't depend on the publish succeeding.
+            await Assert.That(publish.Stdout).Contains("NMica multi-layer publishing is disabled");
+            await Assert.That(publish.Stdout).Contains("PublishTrimmed");
+
+            // No NMica-created layer subdirectories should exist — the layering hook was skipped.
+            var publishDir = Path.Combine(TestDir, "app1", "bin", "Release", "net10.0", "linux-x64", "publish");
+            if (Directory.Exists(publishDir))
+            {
+                await Assert.That(CountLayerSubdirs(publishDir)).IsEqualTo(0);
+            }
+        }
+
         private void GenerateSampleProject()
         {
             new SolutionConfiguration

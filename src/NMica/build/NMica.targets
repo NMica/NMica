@@ -11,6 +11,16 @@
                 '$(TargetFrameworkVersion)'!='v3.0' "
         >True</NMicaSupportedProject>
         <NMicaSupportedProject Condition="'$(NMicaSupportedProject)'==''">False</NMicaSupportedProject>
+
+        <!-- AOT publishes a single native binary — no separate dependency DLLs to layer.
+             Method-level trimming (PublishTrimmed) rewrites each dependency DLL's content based
+             on what the app's code references, so the package layer changes on every app build
+             and the caching benefit evaporates. Force-disable layering in both modes. -->
+        <_NMicaIncompatibleReason Condition="'$(PublishAot)' == 'true'">PublishAot</_NMicaIncompatibleReason>
+        <_NMicaIncompatibleReason Condition="'$(_NMicaIncompatibleReason)' == '' AND '$(PublishTrimmed)' == 'true'">PublishTrimmed</_NMicaIncompatibleReason>
+
+        <_NMicaPublishContainerActive>false</_NMicaPublishContainerActive>
+        <_NMicaPublishContainerActive Condition="'$(NMicaOverridePublishContainer)' == 'true' AND '$(NMicaSupportedProject)' == 'true' AND '$(_NMicaIncompatibleReason)' == ''">true</_NMicaPublishContainerActive>
     </PropertyGroup>
 
     <UsingTask TaskName="NMica.Tasks.PublishLayer" AssemblyFile="$(NMicaToolsPath)" />
@@ -21,7 +31,7 @@
          the task to our assembly when the condition holds. See CreateNewImageOverride.cs. -->
     <UsingTask TaskName="Microsoft.NET.Build.Containers.Tasks.CreateNewImage"
                AssemblyFile="$(NMicaToolsPath)"
-               Condition="'$(NMicaOverridePublishContainer)' == 'true' AND '$(NMicaSupportedProject)' == 'true'" />
+               Condition="'$(_NMicaPublishContainerActive)' == 'true'" />
 
     <Target Name="PublishLayer" DependsOnTargets="Publish;CleanPublish" Condition="$(NMicaSupportedProject)">
         <PublishLayer
@@ -64,11 +74,20 @@
          Net result: `dotnet publish /t:PublishContainer` produces a genuine multi-layer image. -->
     <Target Name="_NMicaPreparePublishLayers"
             BeforeTargets="_PublishSingleContainer"
-            Condition="'$(NMicaOverridePublishContainer)' == 'true' AND '$(NMicaSupportedProject)' == 'true'">
+            Condition="'$(_NMicaPublishContainerActive)' == 'true'">
         <PublishLayer
                 PublishDir="$(PublishDir)"
                 ResolvedFilesToPublish="@(ResolvedFileToPublish)"
                 ProjectReferenceAssemblies="@(_ResolvedProjectReferencePaths)"
                 DockerLayer="All" />
+    </Target>
+
+    <!-- When the user opted in to NMica layering but the project is using AOT or method-level
+         trimming, we fall back to the SDK's single-layer PublishContainer and emit a warning so
+         the user understands why multi-layer output isn't being produced. -->
+    <Target Name="_NMicaWarnIncompatibleMode"
+            BeforeTargets="_PublishSingleContainer"
+            Condition="'$(NMicaOverridePublishContainer)' == 'true' AND '$(NMicaSupportedProject)' == 'true' AND '$(_NMicaIncompatibleReason)' != ''">
+        <Warning Text="NMica multi-layer publishing is disabled for this project because $(_NMicaIncompatibleReason) is enabled. With AOT or method-level trimming the SDK produces either a single native binary or rewrites dependency DLLs per-build, so layering cannot provide cache benefits. The SDK's default single-layer PublishContainer will run instead. Set &lt;NMicaOverridePublishContainer&gt;false&lt;/NMicaOverridePublishContainer&gt; to silence this warning." />
     </Target>
 </Project>
