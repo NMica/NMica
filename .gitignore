@@ -269,3 +269,4 @@ paket-files/
 __pycache__/
 *.pyc
 
+.nuke/temp/

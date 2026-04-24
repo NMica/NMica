@@ -3,7 +3,6 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using Microsoft.Build.Framework;
-using MSBuildExtensionTask;
 using NMica.Tasks.Base;
 
 namespace NMica.Tasks

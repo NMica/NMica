@@ -7,7 +7,6 @@ using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.XPath;
 using Microsoft.Build.Framework;
-using MSBuildExtensionTask;
 using Newtonsoft.Json.Linq;
 using NMica.Tasks.Base;
 using NMica.Utils;

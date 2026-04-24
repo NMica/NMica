@@ -1,28 +1,51 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
-        <TargetFrameworks>net472;netstandard2.0</TargetFrameworks>
-<!--        <TargetFramework>net6.0</TargetFramework>-->
+        <!-- net8.0 gives us System.Formats.Tar for OCI layer creation. MSBuild in dotnet SDK 8+
+             runs on net8.0+, so the task assembly loads fine. We no longer need netstandard2.0
+             compatibility since .NET Framework MSBuild support was removed earlier. -->
+        <TargetFramework>net8.0</TargetFramework>
+        <LangVersion>latest</LangVersion>
+        <Nullable>annotations</Nullable>
+        <!-- Legacy code has plenty of nullability gaps; we annotate but don't enforce for now. -->
+        <NoWarn>$(NoWarn);CS8600;CS8601;CS8602;CS8603;CS8604;CS8618;CS8619</NoWarn>
+        <!-- Pack main assembly + its runtime-required dependencies (Newtonsoft.Json) into tasks/<tfm>/
+             instead of the default lib/<tfm>/. This is the conventional layout for MSBuild task packages. -->
         <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
         <BuildOutputTargetFolder>tasks</BuildOutputTargetFolder>
-        <LangVersion>latest</LangVersion>
-        <NoWarn>NU5100;NU5128</NoWarn>
-        <Platforms>AnyCPU</Platforms>
+        <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+        <NoWarn>NU5100;NU5128;NU1903</NoWarn>
+        <!-- Our custom target adds Newtonsoft.Json alongside NMica.dll in the package. Running
+             through this hook (not TargetsForTfmSpecificContentInPackage) keeps it tied to the
+             normal build-output packaging phase, which runs after Build completes. -->
+        <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);_PackTaskRuntimeAssemblies</TargetsForTfmSpecificBuildOutput>
+
+        <PackageOutputPath>$(MSBuildThisFileDirectory)..\..\artifacts\</PackageOutputPath>
+        <!-- Local-build default; Nuke's Pack target overrides Version for releases. -->
+        <Version Condition="'$(Version)' == '' or '$(Version)' == '1.0.0'">1.0.0-test</Version>
+
+        <PackageId>NMica</PackageId>
+        <Authors>Andrew Stakhov</Authors>
+        <Description>Automates Dockerfile generation for .NET Core projects</Description>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageProjectUrl>http://github.com/NMica/NMica</PackageProjectUrl>
+        <RepositoryUrl>http://github.com/NMica/NMica</RepositoryUrl>
+        <Copyright>Copyright 2026</Copyright>
     </PropertyGroup>
- 
+
     <ItemGroup>
-      <PackageReference Include="Microsoft.Build.Tasks.Core" Version="16.4.0" />
-      <PackageReference Include="Newtonsoft.Json" Version="12.0.3" PrivateAssets="all" />
+        <PackageReference Include="Microsoft.Build.Tasks.Core" Version="17.14.8" PrivateAssets="all" ExcludeAssets="runtime" />
+        <PackageReference Include="Newtonsoft.Json" Version="13.0.3" PrivateAssets="all" />
     </ItemGroup>
 
-    <ItemGroup Condition="'$(TargetFramework)' == 'net472' ">
-        <Reference Include="Microsoft.Build.Framework" Condition="'$(TargetFramework)' == 'net472'" />
-    </ItemGroup>
-    <ItemGroup Condition="'$(TargetFramework)' != 'net472'">
-        <PackageReference Include="System.Runtime.Loader" Version="4.3.0" />
-    </ItemGroup>
-    
+    <!-- Consumer-side MSBuild integration. NuGet auto-imports build/<PackageId>.{props,targets}
+         in the package root, so these files land where consumers expect them. -->
     <ItemGroup>
-        <Compile Remove="Tasks\Base\net472\**" Condition=" '$(TargetFramework)' != 'net472' " />
-        <Compile Remove="Tasks\Base\netstandard2.0\**" Condition=" '$(TargetFramework)' != 'netstandard2.0' " />
+        <None Include="build\**\*" Pack="true" PackagePath="build\" />
     </ItemGroup>
+
+    <Target Name="_PackTaskRuntimeAssemblies">
+        <ItemGroup>
+            <BuildOutputInPackage Include="$(OutputPath)Newtonsoft.Json.dll" />
+        </ItemGroup>
+    </Target>
 </Project>

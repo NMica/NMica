@@ -1,74 +1,77 @@
-namespace MSBuildExtensionTask
-{
-    using System;
-    using System.IO;
-    using System.Linq;
-    using System.Reflection;
-#if NETCOREAPP
-    using System.Runtime.Loader;
-#endif
-    using Microsoft.Build.Framework;
-    using Microsoft.Build.Utilities;
-#if NETCOREAPP
-    using Nerdbank.GitVersioning;
-#endif
+using System;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Runtime.Loader;
+using Microsoft.Build.Framework;
+using Microsoft.Build.Utilities;
 
+namespace NMica.Tasks.Base
+{
+    /// <summary>
+    /// Runs the task body inside an isolated <see cref="AssemblyLoadContext"/> so private
+    /// dependencies (e.g. Newtonsoft.Json) don't clash with assemblies MSBuild already loaded.
+    /// </summary>
     public abstract class ContextAwareTask : Task
     {
-        protected virtual string ManagedDllDirectory => Path.GetDirectoryName(new Uri(this.GetType().GetTypeInfo().Assembly.CodeBase).LocalPath);
-
-        protected virtual string UnmanagedDllDirectory => null;
-
         public override bool Execute()
         {
-#if NETCOREAPP
-            string taskAssemblyPath = new Uri(this.GetType().GetTypeInfo().Assembly.CodeBase).LocalPath;
+            string taskAssemblyPath = new Uri(GetType().GetTypeInfo().Assembly.CodeBase).LocalPath;
+            var loadContext = new TaskLoadContext(Path.GetDirectoryName(taskAssemblyPath));
 
-            Assembly inContextAssembly = GitLoaderContext.Instance.LoadFromAssemblyPath(taskAssemblyPath);
-            Type innerTaskType = inContextAssembly.GetType(this.GetType().FullName);
+            Assembly inContextAssembly = loadContext.LoadFromAssemblyPath(taskAssemblyPath);
+            Type innerTaskType = inContextAssembly.GetType(GetType().FullName);
             object innerTask = Activator.CreateInstance(innerTaskType);
 
-            var outerProperties = this.GetType().GetRuntimeProperties().ToDictionary(i => i.Name);
+            var outerProperties = GetType().GetRuntimeProperties().ToDictionary(i => i.Name);
             var innerProperties = innerTaskType.GetRuntimeProperties().ToDictionary(i => i.Name);
-            var propertiesDiscovery = from outerProperty in outerProperties.Values
-                                      where outerProperty.SetMethod is not null && outerProperty.GetMethod is not null
-                                      let innerProperty = innerProperties[outerProperty.Name]
-                                      select new { outerProperty, innerProperty };
-            var propertiesMap = propertiesDiscovery.ToArray();
-            var outputPropertiesMap = propertiesMap.Where(pair => pair.outerProperty.GetCustomAttribute<OutputAttribute>() is not null).ToArray();
+            var propertiesMap = (from outerProperty in outerProperties.Values
+                                 where outerProperty.SetMethod is not null && outerProperty.GetMethod is not null
+                                 let innerProperty = innerProperties[outerProperty.Name]
+                                 select new { outerProperty, innerProperty }).ToArray();
+            var outputPropertiesMap = propertiesMap
+                .Where(p => p.outerProperty.GetCustomAttribute<OutputAttribute>() is not null)
+                .ToArray();
 
-            foreach (var propertyPair in propertiesMap)
+            foreach (var pair in propertiesMap)
             {
-                object outerPropertyValue = propertyPair.outerProperty.GetValue(this);
-                propertyPair.innerProperty.SetValue(innerTask, outerPropertyValue);
+                pair.innerProperty.SetValue(innerTask, pair.outerProperty.GetValue(this));
             }
 
-            var executeInnerMethod = innerTaskType.GetMethod(nameof(ExecuteInner), BindingFlags.Instance | BindingFlags.NonPublic);
-            bool result = (bool)executeInnerMethod.Invoke(innerTask, new object[0]);
+            var executeInner = innerTaskType.GetMethod(nameof(ExecuteInner), BindingFlags.Instance | BindingFlags.NonPublic);
+            bool result = (bool)executeInner.Invoke(innerTask, Array.Empty<object>());
 
-            foreach (var propertyPair in outputPropertiesMap)
+            foreach (var pair in outputPropertiesMap)
             {
-                propertyPair.outerProperty.SetValue(this, propertyPair.innerProperty.GetValue(innerTask));
+                pair.outerProperty.SetValue(this, pair.innerProperty.GetValue(innerTask));
             }
 
             return result;
-#else
-            // On .NET Framework (on Windows), we find native binaries by adding them to our PATH.
-            if (this.UnmanagedDllDirectory is not null)
-            {
-                string pathEnvVar = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-                string[] searchPaths = pathEnvVar.Split(Path.PathSeparator);
-                if (!searchPaths.Contains(this.UnmanagedDllDirectory, StringComparer.OrdinalIgnoreCase))
-                {
-                    pathEnvVar += Path.PathSeparator + this.UnmanagedDllDirectory;
-                    Environment.SetEnvironmentVariable("PATH", pathEnvVar);
-                }
-            }
-
-            return this.ExecuteInner();
-#endif
         }
 
         protected abstract bool ExecuteInner();
+
+        private sealed class TaskLoadContext : AssemblyLoadContext
+        {
+            private readonly string _taskDirectory;
+
+            public TaskLoadContext(string taskDirectory)
+            {
+                _taskDirectory = taskDirectory;
+            }
+
+            protected override Assembly Load(AssemblyName assemblyName)
+            {
+                // MSBuild and System.* form our exchange surface — let the default context supply them
+                if (assemblyName.Name.StartsWith("Microsoft.Build", StringComparison.OrdinalIgnoreCase) ||
+                    assemblyName.Name.StartsWith("System.", StringComparison.OrdinalIgnoreCase))
+                {
+                    return null;
+                }
+
+                string candidate = Path.Combine(_taskDirectory, assemblyName.Name + ".dll");
+                return File.Exists(candidate) ? LoadFromAssemblyPath(candidate) : null;
+            }
+        }
     }
 }

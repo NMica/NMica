@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Xml.Serialization;
-using Nuke.Common.IO;
 
 namespace NMica.Tests.Utils
 {
@@ -11,30 +10,26 @@ namespace NMica.Tests.Utils
     {
         [XmlArray("packageSources")]
         [XmlArrayItem("add")]
-        public List<NugetPackageSource> PackageSources { get; set; } = new List<NugetPackageSource>();
+        public List<NugetPackageSource> PackageSources { get; set; } = new();
 
         public NugetConfiguration Add(string name, string url)
         {
-            PackageSources.Add(new NugetPackageSource { Key = name, Value = url});
+            PackageSources.Add(new NugetPackageSource { Key = name, Value = url });
             return this;
-        } 
-        public static NugetConfiguration FromDictionary(Dictionary<string, string> values)
-        {
-            var config = new NugetConfiguration()
-            {
-                PackageSources = values.Select(x => new NugetPackageSource
-                {
-                    Key = x.Key,
-                    Value = x.Value
-                }).ToList()
-            };
-            return config;
         }
 
-        public void Generate(AbsolutePath dir)
+        public static NugetConfiguration FromDictionary(Dictionary<string, string> values)
         {
-            FileSystemTasks.EnsureExistingDirectory(dir);
-            File.WriteAllText(dir / "nuget.config", this.ToXml());
+            return new NugetConfiguration
+            {
+                PackageSources = values.Select(x => new NugetPackageSource { Key = x.Key, Value = x.Value }).ToList()
+            };
+        }
+
+        public void Generate(string dir)
+        {
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "nuget.config"), this.ToXml());
         }
     }
 }

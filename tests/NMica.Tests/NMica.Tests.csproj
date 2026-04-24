@@ -1,43 +1,34 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
-        <TargetFramework>netcoreapp5.0</TargetFramework>
+        <TargetFramework>net10.0</TargetFramework>
+        <RollForward>LatestMajor</RollForward>
         <IsPackable>false</IsPackable>
-        <NukeRoot>..\..\</NukeRoot>
-        <TestPackageVersion>1.0.0-test</TestPackageVersion>
+        <LangVersion>latest</LangVersion>
+        <Nullable>disable</Nullable>
+        <NoWarn>NU1903</NoWarn>
+        <!-- TUnit is built on Microsoft.Testing.Platform which wants an Exe entry point. -->
+        <OutputType>Exe</OutputType>
+        <!-- Opt into the Microsoft.Testing.Platform flavour of `dotnet test` (the only mode the
+             .NET 10 SDK supports; VSTest was removed). -->
+        <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+        <RepoRoot>$(MSBuildThisFileDirectory)..\..\</RepoRoot>
+        <ArtifactsDir>$(RepoRoot)artifacts\</ArtifactsDir>
+        <NMicaTestPackageVersion>1.0.0-test</NMicaTestPackageVersion>
+        <NMicaCsproj>$(RepoRoot)src\NMica\NMica.csproj</NMicaCsproj>
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="FluentAssertions" Version="5.10.2" />
-        <PackageReference Include="Lib.Harmony" Version="2.0.4" />
-        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.2.0" />
-        <PackageReference Include="xunit" Version="2.4.0" />
-        <PackageReference Include="xunit.runner.visualstudio" Version="2.4.0" />
-        <PackageReference Include="coverlet.collector" Version="1.0.1" />
-<!--        <PackageReference Include="Nuke.Common" Version="0.25.0-alpha0157" />-->
-        <PackageReference Include="Nuke.Common" Version="5.0.2" />
-        <PackageDownload Include="nbgv" Version="[3.0.50]" />
+        <PackageReference Include="TUnit" Version="1.39.0" />
+        <PackageReference Include="Testcontainers" Version="4.11.0" />
     </ItemGroup>
 
+    <!--
+      Tests only consume NMica as a NuGet package (via generated nuget.config). We don't reference
+      the assembly, we just need the .nupkg to exist before tests build. `Targets=Build;Pack` on the
+      ProjectReference makes MSBuild's static graph treat NMica.Pack as part of building this
+      reference, so parallel solution builds wait for it before continuing.
+    -->
     <ItemGroup>
-
-      <None Update="BuilderImage\Dockerfile">
-        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      </None>
+        <ProjectReference Include="$(NMicaCsproj)" ReferenceOutputAssembly="false" Targets="Build;Pack" />
     </ItemGroup>
-
-    <ItemGroup>
-      <ProjectReference Include="..\..\build-tasks\BuildTasks.csproj" />
-      <ProjectReference Include="..\..\src\NMica\NMica.csproj" />
-    </ItemGroup>
-    
-<!--    <PropertyGroup>-->
-<!--        <NoDependencyBuild>true</NoDependencyBuild>-->
-<!--    </PropertyGroup>-->
-<!--    -->
-
-    <Target Name="Artifacts" AfterTargets="Build" Condition="($(NoDependencyBuild) != 'true') and ($(VSTestListTests) != 'true')">
-        <!-- Fuck MSBuild - it's built by sadists. Assembling a package out of nuspec should not be this difficult. Delegate out to Nuke --> 
-        <Exec Command="dotnet run PublishTest EnsureLatestBuilderImage --nologo --skip Clean CompileTests PublishLatestBuilder LoginDocker --verbosity Quiet" EnvironmentVariables="NO_TERM_COLOR=true" WorkingDirectory="$(NukeRoot)\build" />
-    </Target>
-
 </Project>

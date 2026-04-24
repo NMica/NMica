@@ -5,10 +5,9 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Microsoft.Build.Framework;
-using MSBuildExtensionTask;
 using Newtonsoft.Json.Linq;
 using NMica.Tasks.Base;
-using NMica.Utils; // using System.Text.Json;
+using NMica.Utils;
 
 namespace NMica.Tasks
 {

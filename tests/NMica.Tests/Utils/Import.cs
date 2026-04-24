@@ -1,5 +1,4 @@
 using System.Xml.Serialization;
-using Nuke.Common;
 
 namespace NMica.Tests.Utils
 {
@@ -8,7 +7,7 @@ namespace NMica.Tests.Utils
         [XmlAttribute]
         public string Project { get; set; }
 
-        public static Import NmicaProps => new Import {Project = NukeBuild.RootDirectory / "src" / "NMica" / "nuget" / "build" / "NMica.props"};
-        public static Import NmicaTargets => new Import {Project = NukeBuild.RootDirectory / "src" / "NMica" / "nuget" / "build" / "NMica.targets"};
+        public static Import NmicaProps => new Import { Project = TestPaths.NMicaPropsPath };
+        public static Import NmicaTargets => new Import { Project = TestPaths.NMicaTargetsPath };
     }
 }

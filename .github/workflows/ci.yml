@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write          # dorny/test-reporter writes a Check with per-test results
+  pull-requests: write   # optional: summary on the PR
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0        # Nerdbank.GitVersioning needs full history for accurate versions
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      # Docker comes pre-installed on ubuntu-latest. Tests use Testcontainers to spin up
+      # mcr.microsoft.com/dotnet/sdk:10.0 containers for integration scenarios.
+      - name: Build & test
+        run: >
+          dotnet test --project tests/NMica.Tests/NMica.Tests.csproj
+          --configuration Release
+          --
+          --report-trx
+          --results-directory ${{ github.workspace }}/artifacts/test-results
+
+      - name: Publish test report
+        uses: dorny/test-reporter@v3
+        if: always()            # run even if tests failed, so failures are visible in the check
+        with:
+          name: Test Results
+          path: artifacts/test-results/*.trx
+          reporter: dotnet-trx
+          fail-on-error: false  # the step itself should never fail the job; tests already did
+
+      - name: Upload test results (raw)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: artifacts/test-results/
+          if-no-files-found: ignore
+
+      - name: Upload NuGet package
+        uses: actions/upload-artifact@v4
+        with:
+          name: nupkg
+          path: artifacts/*.nupkg
+          if-no-files-found: error
+
+  release:
+    needs: build-and-test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: nuget-release
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Pack & push to NuGet.org
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: ./build.sh Release --nuget-api-key "$NUGET_API_KEY"

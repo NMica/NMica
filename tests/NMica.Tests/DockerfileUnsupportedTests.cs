@@ -2,58 +2,43 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection;
-using System.Text.RegularExpressions;
-using FluentAssertions;
+using System.Threading.Tasks;
 using NMica.Tests.Utils;
-using Nuke.Common;
-using Nuke.Common.IO;
-using Nuke.Common.Tooling;
-using Nuke.Common.Tools.Docker;
-using Nuke.Common.Tools.DotNet;
-using Nuke.Common.Utilities.Collections;
-using Xunit;
-using Xunit.Abstractions;
-using static Nuke.Common.IO.FileSystemTasks;
-using static Nuke.Common.Tools.DotNet.DotNetTasks;
-using static Nuke.Common.Tools.Docker.DockerTasks;
-using PackageReference = NMica.Tests.Utils.PackageReference;
+using TUnit.Assertions;
+using TUnit.Assertions.Extensions;
+using TUnit.Core;
 
 namespace NMica.Tests
 {
-    [Collection("Docker")]
     public class DockerfileUnsupportedTests : BaseTests
     {
-        public DockerfileUnsupportedTests(ITestOutputHelper output, TestsSetup setup) : base(output, setup)
+        public static IEnumerable<Func<SolutionConfiguration>> GetBasicUnsupportedProjects()
         {
+            // Library outputType never gets a Dockerfile generated regardless of framework.
+            yield return () => MakeSolution("net10.0, outputType=Library", Sdks.Microsoft_NET_Sdk, "net10.0", outputType: "Library");
         }
-        public static IEnumerable<object[]> GetBasicUnsupportedProjects()
+
+        [Test]
+        [MethodDataSource(nameof(GetBasicUnsupportedProjects))]
+        public async Task BuildSolution_UnsupportedProjects_SkipDockerfileGeneration(SolutionConfiguration solution)
         {
-            yield return MakeSolution("net472", Sdks.Microsoft_NET_Sdk, "net472", directRef: false);
-            yield return MakeSolution("netcoreapp2.1", Sdks.Microsoft_NET_Sdk, "netcoreapp2.1", directRef: false); 
-            yield return MakeSolution("netcoreapp3.1, outputType=Library", Sdks.Microsoft_NET_Sdk, "netcoreapp3.1", outputType: "Library", directRef: false);
-        }
-        
-        [Theory]
-        [MemberData(nameof(GetBasicUnsupportedProjects))]
-        public void BuildSolution_UnsupportedProjects_SkipDockerfileGeneration(SolutionConfiguration solution)
-        {
-            solution.Generate(_testDir);
-            ExecuteProcess(() =>
-            {
-                var output =  DockerRun(_ => _
-                        .EnableRm()
-                        .AddVolume(ContainerAppDir)
-                        .SetImage(_setup.TestContainerSDKImage)
-                        .SetCommand($"dotnet build --verbosity normal {ContainerAppDir / "testapp.sln"}"))
-                    .Flatten();
-                output.Should().NotContain("GenerateDockerfile:", "GenerateDockerfile target ran on build, but should have been skipped");
-                var dockerFilesGenerated = solution.Projects
-                    .Select(x => _testDir / x.Name / "Dockerfile")
-                    .Where(FileExists)
-                    .ToList();
-                dockerFilesGenerated.Should().BeEmpty();
-            });
+            solution.Generate(TestDir);
+
+            // Pass GenerateDockerfile=true explicitly: otherwise the target is skipped by its own
+            // property condition and the test becomes trivial. We want to verify that NMica's
+            // NMicaSupportedProject gate keeps the target off *even when the user opts in*.
+            await using var sdk = await DockerHelper.StartSdkAsync(Setup.SdkImage, TestDir);
+            var result = await sdk.ExecAsync(
+                $"dotnet build -p:GenerateDockerfile=true --verbosity normal {DockerHelper.ContainerMount}/{solution.FileName}",
+                Output);
+
+            await Assert.That(result.Stdout).DoesNotContain("GenerateDockerfile:");
+
+            var dockerfilesGenerated = solution.Projects
+                .Select(x => Path.Combine(TestDir, x.Name, "Dockerfile"))
+                .Where(File.Exists)
+                .ToList();
+            await Assert.That(dockerfilesGenerated).IsEmpty();
         }
     }
 }

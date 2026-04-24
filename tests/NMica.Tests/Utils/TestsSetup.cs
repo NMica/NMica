@@ -1,51 +1,19 @@
 using System;
-using Nuke.Common;
-using Nuke.Common.Tooling;
-using Nuke.Common.Tools.Docker;
-using Nuke.Common.Tools.NerdbankGitVersioning;
-using DockerImagePruneSettingsExtensions = Nuke.Common.Tools.Docker.DockerImagePruneSettingsExtensions;
 
 namespace NMica.Tests.Utils
 {
+    /// <summary>
+    /// Shared across all tests in a docker-collection. Defines the SDK image used to build/run test
+    /// solutions inside containers.
+    /// </summary>
     public class TestsSetup : IDisposable
     {
-        public readonly string TestContainerSDKImage;
-        private readonly object _lock = new();
-        public TestsSetup ()
-        {
-            ToolPathResolver.NuGetPackagesConfigFile = NukeBuild.RootDirectory / "tests" / "NMica.Tests" / "NMica.Tests.csproj";
+        public const string NMicaVersion = "1.0.0-test";
+        public string SdkImage { get; } = Environment.GetEnvironmentVariable("NMICA_TEST_SDK_IMAGE") ?? "mcr.microsoft.com/dotnet/sdk:10.0";
 
-            var version = NerdbankGitVersioningTasks.NerdbankGitVersioningGetVersion(s => s
-                    .SetProcessWorkingDirectory(NukeBuild.RootDirectory / "tests" / "NMica.Tests" / "BuilderImage")
-                    .DisableProcessLogOutput()
-                    .SetFormat(NerdbankGitVersioningFormat.Json))
-                .Result;
-            TestContainerSDKImage = $"macsux/nmica-test-container:{version.NuGetPackageVersion}";
+        public static string SdkImageFor(string targetFramework) =>
+            $"mcr.microsoft.com/dotnet/sdk:{targetFramework.Replace("net", string.Empty)}";
 
-            // lock (_lock)
-            // {
-            //     ToolPathResolver.NuGetPackagesConfigFile = NukeBuild.RootDirectory / "tests" / "NMica.Tests" / "NMica.Tests.csproj";
-            //     var imageExists = DockerTasks.DockerImages(c => c
-            //             .SetFormat("'{{json .}}'")
-            //             .SetRepository(TestContainerSDKImage))
-            //         .Any();
-            //     if (!imageExists)
-            //     {
-            //         var imageBuilder = NukeBuild.RootDirectory / "tests" / "NMica.Tests" / "BuilderImage";
-            //         DockerTasks.DockerBuild(c => c
-            //                 .SetPath(imageBuilder)
-            //                 .SetProcessWorkingDirectory(imageBuilder)
-            //                 .SetTag(TestContainerSDKImage))
-            //             .EnsureNoErrors();
-            //     }
-            // }
-        }
-
-        public static string NMicaVersion => "1.0.0-test"; 
- 
-        public void Dispose()
-        {
-            DockerTasks.DockerImagePrune(_ => DockerImagePruneSettingsExtensions.EnableForce(_));
-        }
+        public void Dispose() { }
     }
 }

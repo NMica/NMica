@@ -1,0 +1,17 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <NMicaToolsRootPath Condition=" '$(NMicaToolsRootPath)' == '' ">$(MSBuildThisFileDirectory)</NMicaToolsRootPath>
+        <NMicaToolsPath Condition=" '$(NMicaToolsPath)' == '' ">$(NMicaToolsRootPath)..\tasks\net8.0\NMica.dll</NMicaToolsPath>
+
+        <!-- Off by default; set to True on projects that want an on-disk Dockerfile generated
+             next to the csproj on every build. The recommended flow is to use
+             `dotnet publish /t:PublishContainer` instead (see NMicaOverridePublishContainer). -->
+        <GenerateDockerfile Condition="'$(GenerateDockerfile)' == ''">False</GenerateDockerfile>
+
+        <!-- On by default: when the SDK's `PublishContainer` target runs, NMica takes over
+             image creation to produce a multi-layer image (one Docker layer per package /
+             earlypackage / project / app bucket). Set to False to fall back to the SDK's
+             default single-layer behaviour. -->
+        <NMicaOverridePublishContainer Condition="'$(NMicaOverridePublishContainer)' == ''">True</NMicaOverridePublishContainer>
+    </PropertyGroup>
+</Project>

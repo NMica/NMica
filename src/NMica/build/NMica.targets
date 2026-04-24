@@ -1,0 +1,75 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <NMicaSupportedProject Condition="
+                '$(_IsExecutable)' != '' AND
+                '$(TargetFrameworkIdentifier)'=='.NETCoreApp'  AND
+                '$(TargetFrameworkVersion)'!='v1.0' AND
+                '$(TargetFrameworkVersion)'!='v1.1' AND
+                '$(TargetFrameworkVersion)'!='v2.0' AND
+                '$(TargetFrameworkVersion)'!='v2.1' AND
+                '$(TargetFrameworkVersion)'!='v2.2' AND
+                '$(TargetFrameworkVersion)'!='v3.0' "
+        >True</NMicaSupportedProject>
+        <NMicaSupportedProject Condition="'$(NMicaSupportedProject)'==''">False</NMicaSupportedProject>
+    </PropertyGroup>
+
+    <UsingTask TaskName="NMica.Tasks.PublishLayer" AssemblyFile="$(NMicaToolsPath)" />
+    <UsingTask TaskName="NMica.Tasks.GenerateDockerfile" AssemblyFile="$(NMicaToolsPath)" />
+    <UsingTask TaskName="NMica.Tasks.CleanPublishDir" AssemblyFile="$(NMicaToolsPath)" />
+
+    <!-- Override the SDK's CreateNewImage task. This NuGet .targets file is imported AFTER the
+         SDK's Microsoft.NET.Build.Containers.targets, so MSBuild's last-UsingTask-wins rule routes
+         the task to our assembly when the condition holds. See CreateNewImageOverride.cs. -->
+    <UsingTask TaskName="Microsoft.NET.Build.Containers.Tasks.CreateNewImage"
+               AssemblyFile="$(NMicaToolsPath)"
+               Condition="'$(NMicaOverridePublishContainer)' == 'true' AND '$(NMicaSupportedProject)' == 'true'" />
+
+    <Target Name="PublishLayer" DependsOnTargets="Publish;CleanPublish" Condition="$(NMicaSupportedProject)">
+        <PublishLayer
+                RuntimeIdentifier="$(RuntimeIdentifier)"
+                TargetFrameworkMoniker="$(TargetFrameworkMoniker)"
+                TargetFramework="$(TargetFramework)"
+                BaseIntermediateOutputPath="$(BaseIntermediateOutputPath)"
+                PublishDir="$(PublishDir)"
+                DockerLayer="$(DockerLayer)" />
+    </Target>
+
+    <Target Name="CleanPublish" BeforeTargets="Build" Condition="'$(NMicaSupportedProject)' AND '$(DockerLayer)'!=''">
+        <CleanPublishDir PublishDir="$(PublishDir)" />
+    </Target>
+
+    <Target Name="GenerateDockerfile" AfterTargets="Build" Condition="
+          '$(GenerateDockerfile)' AND
+          '$(NMicaSupportedProject)' AND
+          '$(SolutionPath)' != '' AND
+          '$(SolutionPath)' != '*Undefined*'">
+        <GenerateDockerfile
+                UsingMicrosoftNETSdkWeb="$(UsingMicrosoftNETSdkWeb)"
+                TargetFrameworkVersion="$(TargetFrameworkVersion)"
+                TargetFrameworkIdentifier="$(TargetFrameworkIdentifier)"
+                AssemblyName="$(AssemblyName)"
+                MSBuildProjectFullPath="$(MSBuildProjectFullPath)"
+                BaseIntermediateOutputPath="$(BaseIntermediateOutputPath)"
+                SolutionPath="$(SolutionPath)"
+                IsExecutable="$(_IsExecutable)" />
+    </Target>
+
+    <!-- PublishContainer integration. The SDK publishes content into $(PublishDir) then calls
+         _PublishSingleContainer, which invokes the CreateNewImage task. We:
+           1) Rearrange $(PublishDir) into package/earlypackage/project/app subdirectories via
+              PublishLayer, BEFORE _PublishSingleContainer runs.
+           2) Route the CreateNewImage task call into our shadow class (via the UsingTask above),
+              which writes a multi-COPY Dockerfile over those subdirs and shells to docker build.
+         Net result: `dotnet publish /t:PublishContainer` produces a genuine multi-layer image. -->
+    <Target Name="_NMicaPreparePublishLayers"
+            BeforeTargets="_PublishSingleContainer"
+            Condition="'$(NMicaOverridePublishContainer)' == 'true' AND '$(NMicaSupportedProject)' == 'true'">
+        <PublishLayer
+                RuntimeIdentifier="$(RuntimeIdentifier)"
+                TargetFrameworkMoniker="$(TargetFrameworkMoniker)"
+                TargetFramework="$(TargetFramework)"
+                BaseIntermediateOutputPath="$(BaseIntermediateOutputPath)"
+                PublishDir="$(PublishDir)"
+                DockerLayer="All" />
+    </Target>
+</Project>
