@@ -15,7 +15,6 @@
 
     <UsingTask TaskName="NMica.Tasks.PublishLayer" AssemblyFile="$(NMicaToolsPath)" />
     <UsingTask TaskName="NMica.Tasks.GenerateDockerfile" AssemblyFile="$(NMicaToolsPath)" />
-    <UsingTask TaskName="NMica.Tasks.CleanPublishDir" AssemblyFile="$(NMicaToolsPath)" />
 
     <!-- Override the SDK's CreateNewImage task. This NuGet .targets file is imported AFTER the
          SDK's Microsoft.NET.Build.Containers.targets, so MSBuild's last-UsingTask-wins rule routes
@@ -32,8 +31,12 @@
                 DockerLayer="$(DockerLayer)" />
     </Target>
 
+    <!-- Wipe $(PublishDir) before a partial-layer publish so a prior DockerLayer=All run
+         doesn't leave stale files mixed in with the narrower subset the user now asked for.
+         Only fires when PublishLayer was invoked with an explicit DockerLayer; the
+         PublishContainer path publishes everything anyway. -->
     <Target Name="CleanPublish" BeforeTargets="Build" Condition="'$(NMicaSupportedProject)' AND '$(DockerLayer)'!=''">
-        <CleanPublishDir PublishDir="$(PublishDir)" />
+        <RemoveDir Directories="$(PublishDir)" ContinueOnError="WarnAndContinue" />
     </Target>
 
     <Target Name="GenerateDockerfile" AfterTargets="Build" Condition="
