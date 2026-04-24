@@ -65,26 +65,34 @@ dotnet publish /t:PublishContainer \
 
 Under the hood: NMica hooks `BeforeTargets="_PublishSingleContainer"` to partition `$(PublishDir)` into `package/`, `earlypackage/`, `project/`, `app/` subdirectories (via MSBuild item metadata — no `project.assets.json` parsing). Then the SDK's own `CreateNewImage` task is redirected (via `<UsingTask>` override) to a NMica shadow that iterates those subdirectories and calls `Layer.FromDirectory` + `ImageBuilder.AddLayer` once per bucket instead of once on the whole `$(PublishDir)`. The rest of the pipeline — base-image pull, manifest/config assembly, push/archive/load — runs unmodified SDK code linked in as a git submodule. See [Build (contributors)](#build-contributors).
 
-### `PublishLayer` — low-level layer staging
+### `PublishLayer` + `GenerateDockerfile` — classic Dockerfile flow
 
-For users who prefer to author their own Dockerfile, NMica's `PublishLayer` target reorganizes `$(PublishDir)` into the four buckets. You COPY each as its own `RUN` layer.
+If you'd rather ship a `Dockerfile` in your repo and run `docker build` yourself, NMica has you covered with two pieces that work together:
 
-```sh
-# Split everything into all four layers under ./out
-dotnet msbuild /t:PublishLayer \
-  -p:DockerLayer=All \
-  -p:PublishDir=out/ \
-  MyApp.csproj
-# → out/package/*.dll, out/earlypackage/*.dll, out/project/*.dll, out/app/*.dll
+- **`GenerateDockerfile`** writes a ready-to-use multi-stage Dockerfile next to your `.csproj`. Off by default; opt in by setting `<GenerateDockerfile>true</GenerateDockerfile>` in your project (or pass `-p:GenerateDockerfile=true` to a build).
+- **`PublishLayer`** is the runtime-side target the Dockerfile invokes inside its build stage — it partitions `$(PublishDir)` into the four buckets so each gets its own `COPY`.
 
-# Stage only specific layers (combinable comma-separated)
-dotnet msbuild /t:PublishLayer \
-  -p:DockerLayer=Package,Project \
-  -p:PublishDir=out/ \
-  MyApp.csproj
+#### Let NMica generate the Dockerfile for you
+
+```xml
+<!-- in MyApp.csproj -->
+<PropertyGroup>
+  <GenerateDockerfile>true</GenerateDockerfile>
+</PropertyGroup>
 ```
 
-Then in your Dockerfile:
+Then:
+
+```sh
+dotnet build mysolution.sln
+docker build -t myapp -f src/MyApp/Dockerfile .
+```
+
+Every solution build regenerates `Dockerfile` next to each executable project. The generated Dockerfile uses `sdk:10.0+` for the build stage (so NMica's task can load) and `runtime:<your-TFM>` / `aspnet:<your-TFM>` for the runtime stage, and ends with the four per-layer `COPY` lines.
+
+#### Or hand-write your own Dockerfile
+
+The `PublishLayer` target is what the generated Dockerfile calls — and it's just as usable from a Dockerfile you wrote yourself:
 
 ```dockerfile
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
@@ -101,7 +109,17 @@ COPY --from=build /out/app/ ./
 ENTRYPOINT ["dotnet", "MyApp.dll"]
 ```
 
-Each `COPY` becomes its own Docker layer — same caching benefit as the `PublishContainer` path, but the Dockerfile is yours to customize.
+You can also invoke `PublishLayer` standalone — useful for scripts or CI jobs that want just a subset of the layers:
+
+```sh
+# All four buckets into ./out
+dotnet msbuild /t:PublishLayer -p:DockerLayer=All -p:PublishDir=out/ MyApp.csproj
+
+# Just two buckets (combinable comma-separated)
+dotnet msbuild /t:PublishLayer -p:DockerLayer=Package,Project -p:PublishDir=out/ MyApp.csproj
+```
+
+Same caching benefit as the `PublishContainer` path either way — the Dockerfile route just gives you full control over the image recipe.
 
 ## How it layers
 
@@ -121,7 +139,7 @@ Deeper write-up: https://stakhov.pro/building-efficient-net-docker-images/
 | Property | Default | Effect |
 |---|---|---|
 | `NMicaOverridePublishContainer` | `true` | When set, `PublishContainer` produces a multi-layer image. Turn off to use the SDK's default single-layer behaviour. |
-| `GenerateDockerfile` | `false` | Opt in to have a `Dockerfile` regenerated next to the `.csproj` on every build (for users who prefer the classic `docker build -f Dockerfile` flow; the `PublishLayer` target above is the cleaner alternative). |
+| `GenerateDockerfile` | `false` | Opt in to have a multi-stage `Dockerfile` regenerated next to the `.csproj` on every build. Pairs with `PublishLayer` — the generated Dockerfile invokes `PublishLayer` in its build stage. Leave off if you use `PublishContainer` or ship your own Dockerfile. |
 | `DockerLayer` | _(all)_ | Passed to `PublishLayer` to pick specific layers. Values: `App`, `Package`, `EarlyPackage`, `Project`, `All` (combinable with commas). |
 
 ## Requirements
