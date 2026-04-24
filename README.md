@@ -130,13 +130,44 @@ Deeper write-up: https://stakhov.pro/building-efficient-net-docker-images/
 
 - Executable project targeting .NET 6 or later
 - Built from a solution file
-- **For `PublishContainer` with local-daemon or remote-registry output**: Docker available on the build host (Phase 1 fallback path)
-- **For `PublishContainer` with `ContainerArchiveOutputPath`**: no daemon required — pure HTTPS pull of the base image + local tarball write
+- **For `PublishContainer` with local-daemon output**: Docker or Podman available on the build host (tarball is piped to `docker load` / `podman load`)
+- **For `PublishContainer` with `ContainerArchiveOutputPath` or `ContainerRegistry`**: no daemon required — pure HTTPS pull of the base image + local tarball write or direct Distribution API push
+
+## Build (contributors)
+
+NMica links large parts of its OCI machinery directly from a sparse git submodule of [`dotnet/sdk`](https://github.com/dotnet/sdk) pinned at `external/dotnet-sdk/` (see `.gitmodules`). First clone:
+
+```sh
+# shallow submodule init avoids pulling 1+ GB of SDK history
+git clone <this-repo>
+git -C <repo> submodule update --init --depth 1
+```
+
+If you forgot `--depth 1` at init time and already downloaded the full SDK history, you can retrofit:
+
+```sh
+git -C external/dotnet-sdk fetch --depth 1 origin $(git -C external/dotnet-sdk rev-parse HEAD)
+git -C external/dotnet-sdk reflog expire --expire=now --all
+git -C external/dotnet-sdk gc --prune=now
+```
+
+Background on shallow submodules: <https://stackoverflow.com/questions/2144406/how-to-make-shallow-git-submodules>. The submodule is marked `shallow = true` in `.gitmodules` so `git submodule update --recursive` defaults to shallow on subsequent pulls.
+
+To bump the pinned SDK version:
+
+```sh
+cd external/dotnet-sdk
+git fetch --depth 1 origin tag v<new-tag>
+git checkout v<new-tag>
+cd ../..
+git add external/dotnet-sdk
+git commit -m "Bump dotnet/sdk to v<new-tag>"
+```
 
 ## Roadmap
 
-NMica's `PublishContainer` override is structured to mirror `Microsoft.NET.Build.Containers` (the SDK's internal container machinery) closely. The intent is to upstream this as a feature PR to the SDK once it's complete, at which point NMica itself becomes unnecessary for this use case.
+NMica's `PublishContainer` override is structured to mirror `Microsoft.NET.Build.Containers` (the SDK's internal container machinery) as closely as possible — the Containers sources are linked in from a pinned `dotnet/sdk` submodule rather than reimplemented. The intent is to upstream this as a feature PR to the SDK once it's complete, at which point NMica itself becomes unnecessary for this use case.
 
-- **Phase 1 (shipped)**: daemonless OCI archive output; Docker-build fallback for daemon and remote push
-- **Phase 2 (next)**: direct daemonless registry push via Distribution API (with auth: `config.json` + credential helpers); `docker save` tarball format + `docker load` for local daemon without `docker build`
-- **Phase 3**: multi-arch manifests; cross-repo blob mount optimization
+- **Phase 1 (shipped)**: hand-rolled OCI archive writer + docker-build fallback
+- **Phase 2 (shipped)**: link the SDK's `Microsoft.NET.Build.Containers` sources directly. All three output modes (local daemon, OCI archive, remote registry push) go through the SDK's proven machinery; our contribution is the single "iterate layer buckets" change in the `CreateNewImage` shadow task
+- **Phase 3 (next)**: upstream PR against `dotnet/sdk` exposing the multi-layer capability as a first-class `PublishContainer` feature
