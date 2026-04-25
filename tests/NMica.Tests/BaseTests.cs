@@ -8,8 +8,6 @@ namespace NMica.Tests
 {
     public abstract class BaseTests
     {
-        private const string TestNupkgName = "NMica.1.0.0-test.nupkg";
-
         [ClassDataSource<TestsSetup>(Shared = SharedType.PerAssembly)]
         public required TestsSetup Setup { get; init; }
 
@@ -32,8 +30,8 @@ namespace NMica.Tests
             // Stage local NMica nupkg so test solutions can restore it from nuget.config -> ./artifacts
             var artifactsDir = Path.Combine(TestDir, "artifacts");
             Directory.CreateDirectory(artifactsDir);
-            File.Copy(Path.Combine(TestPaths.ArtifactsDir, TestNupkgName),
-                      Path.Combine(artifactsDir, TestNupkgName), overwrite: true);
+            var nupkg = TestPaths.NMicaNupkg;
+            File.Copy(nupkg, Path.Combine(artifactsDir, Path.GetFileName(nupkg)), overwrite: true);
         }
 
         [After(HookType.Test)]

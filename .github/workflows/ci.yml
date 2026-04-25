@@ -25,6 +25,9 @@ jobs:
         with:
           fetch-depth: 0        # Nerdbank.GitVersioning needs full history for accurate versions
 
+      - name: Init SDK submodule (shallow)
+        run: git submodule update --init --depth 1
+
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
@@ -41,12 +44,12 @@ jobs:
 
       - name: Publish test report
         uses: dorny/test-reporter@v3
-        if: always()            # run even if tests failed, so failures are visible in the check
+        if: always()
         with:
           name: Test Results
           path: artifacts/test-results/*.trx
           reporter: dotnet-trx
-          fail-on-error: false  # the step itself should never fail the job; tests already did
+          fail-on-error: false
 
       - name: Upload test results (raw)
         uses: actions/upload-artifact@v4
@@ -69,15 +72,20 @@ jobs:
     runs-on: ubuntu-latest
     environment: nuget-release
     steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
-      - name: Pack & push to NuGet.org
+      - uses: actions/download-artifact@v4
+        with:
+          name: nupkg
+          path: artifacts
+
+      - name: Push to NuGet.org
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
-        run: ./build.sh Release --nuget-api-key "$NUGET_API_KEY"
+        run: >
+          dotnet nuget push "artifacts/*.nupkg"
+          --source https://api.nuget.org/v3/index.json
+          --api-key "$NUGET_API_KEY"
+          --skip-duplicate

@@ -12,8 +12,6 @@
              .NET 10 SDK supports; VSTest was removed). -->
         <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
         <RepoRoot>$(MSBuildThisFileDirectory)..\..\</RepoRoot>
-        <ArtifactsDir>$(RepoRoot)artifacts\</ArtifactsDir>
-        <NMicaTestPackageVersion>1.0.0-test</NMicaTestPackageVersion>
         <NMicaCsproj>$(RepoRoot)src\NMica\NMica.csproj</NMicaCsproj>
     </PropertyGroup>
 

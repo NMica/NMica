@@ -14,7 +14,6 @@
         <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
 
         <PackageOutputPath>$(MSBuildThisFileDirectory)..\..\artifacts\</PackageOutputPath>
-        <Version Condition="'$(Version)' == '' or '$(Version)' == '1.0.0'">1.0.0-test</Version>
 
         <PackageId>NMica</PackageId>
         <Authors>Andrew Stakhov</Authors>
@@ -50,6 +49,11 @@
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" PrivateAssets="all" ExcludeAssets="runtime" />
         <PackageReference Include="NuGet.Packaging" Version="6.12.1" PrivateAssets="all" ExcludeAssets="runtime" />
         <PackageReference Include="Valleysoft.DockerCredsProvider" Version="2.1.0" PrivateAssets="all" ExcludeAssets="runtime" />
+
+        <!-- Computes NuGet package version from version.json + git history at build time.
+             Produces clean versions on release-branch / release-tag builds (see
+             publicReleaseRefSpec in version.json), and prerelease-suffixed versions otherwise. -->
+        <PackageReference Include="Nerdbank.GitVersioning" Version="3.9.50" PrivateAssets="all" />
     </ItemGroup>
 
     <!-- Link SDK source files verbatim. Exclude:
