@@ -1,6 +1,6 @@
 # NMica
 
-[![CI](https://github.com/NMica/NMica/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/NMica/NMica/actions/workflows/ci.yml)
+[![CI](https://github.com/NMica/NMica/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/NMica/NMica/actions/workflows/ci.yml)
 [![NuGet](https://img.shields.io/nuget/v/NMica.svg)](https://www.nuget.org/packages/NMica)
 
 **Multi-layer, cache-optimized container images for .NET — out of the box with `dotnet publish /t:PublishContainer`.**
