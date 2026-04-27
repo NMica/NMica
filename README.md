@@ -106,10 +106,6 @@ COPY --from=build /out/app/ ./
 ENTRYPOINT ["dotnet", "MyApp.dll"]
 ```
 
-- 
-
-Classification is driven entirely by MSBuild item metadata that the SDK's restore pipeline already computes (`%(NuGetPackageVersion)` on `@(ResolvedFileToPublish)`) — no `project.assets.json` parsing involved.
-
 Deeper write-up: https://stakhov.pro/building-efficient-net-docker-images/
 
 ## Configuration
@@ -144,10 +140,3 @@ dotnet test
 
 NMica source-links parts of [`dotnet/sdk`](https://github.com/dotnet/sdk) as a submodule at `external/dotnet-sdk/`; `--shallow-submodules` keeps the clone fast (skipping the SDK's ~1.5 GB history). If you already cloned without it, `git submodule update --init --depth 1` retrofits.
 
-## Roadmap
-
-NMica's `PublishContainer` override is structured to mirror `Microsoft.NET.Build.Containers` (the SDK's internal container machinery) as closely as possible — the Containers sources are linked directly from a pinned `dotnet/sdk` submodule rather than reimplemented. The intent is to upstream this as a feature PR to the SDK once it's stable, at which point NMica becomes unnecessary for this use case.
-
-- **Phase 1** (superseded): hand-rolled OCI archive writer + docker-build fallback
-- **Phase 2** (shipped): submodule-link the SDK's `Microsoft.NET.Build.Containers` sources directly. All three sinks (local daemon, OCI archive, remote registry push) go through the SDK's proven machinery with full credential-helper + auth support; our only contribution is the "iterate layer buckets" change in the `CreateNewImage` shadow task
-- **Phase 3** (next): upstream PR against `dotnet/sdk` exposing the multi-layer capability as a first-class `PublishContainer` feature, making NMica unnecessary
