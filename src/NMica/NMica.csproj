@@ -19,8 +19,8 @@
         <Authors>Andrew Stakhov</Authors>
         <Description>Multi-layer container images for .NET via PublishContainer — multi-COPY Dockerfile generation + SDK-linked OCI writer.</Description>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
-        <PackageProjectUrl>http://github.com/NMica/NMica</PackageProjectUrl>
-        <RepositoryUrl>http://github.com/NMica/NMica</RepositoryUrl>
+        <PackageProjectUrl>https://github.com/NMica/NMica</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/NMica/NMica</RepositoryUrl>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <Copyright>Copyright 2026</Copyright>
 
