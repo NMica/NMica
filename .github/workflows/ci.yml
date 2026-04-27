@@ -34,7 +34,15 @@ jobs:
 
       # Docker comes pre-installed on ubuntu-latest. Tests use Testcontainers to spin up
       # mcr.microsoft.com/dotnet/sdk:10.0 containers for integration scenarios.
+      #
+      # DOCKER_BUILDKIT=0 disables BuildKit. The GHA runner's containerd-snapshotter
+      # builder races on cross-stage layer references when multiple docker-build calls
+      # run concurrently (TUnit fans tests out by default), producing flaky
+      # "failed to get layer sha256:... layer does not exist" errors. Classic builder
+      # serialises layer access and sidesteps the issue.
       - name: Build & test
+        env:
+          DOCKER_BUILDKIT: "0"
         run: >
           dotnet test --project tests/NMica.Tests/NMica.Tests.csproj
           --configuration Release
