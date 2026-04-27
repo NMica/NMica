@@ -32,14 +32,20 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # GHA's ubuntu-24.04 runner ships Docker 28 with the containerd image store
+      # (a.k.a. containerd snapshotter) as the default backend. Its exporter races
+      # against containerd GC on multi-layer builds, producing
+      #   "failed to export image: failed to get layer sha256:... layer does not exist"
+      # even on a single, serial build. Disabling the snapshotter drops Docker back
+      # to the classic overlay2 image store, which doesn't have the race.
+      # (`features.buildkit: false` is a deprecated no-op key — don't be tempted.)
+      - name: Disable containerd snapshotter
+        run: |
+          echo '{ "features": { "containerd-snapshotter": false } }' | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+
       # Docker comes pre-installed on ubuntu-latest. Tests use Testcontainers to spin up
       # mcr.microsoft.com/dotnet/sdk:10.0 containers for integration scenarios.
-      #
-      # --maximum-parallel-tests 1 forces serial execution. The GHA runner's Docker
-      # daemon uses the containerd image store (default since Docker 24+), which races
-      # on layer references when multiple `docker build` calls run concurrently against
-      # the same daemon ("failed to get layer sha256:... layer does not exist"). Local
-      # dev keeps full parallelism — this flag only applies on CI.
       - name: Build & test
         run: >
           dotnet test --project tests/NMica.Tests/NMica.Tests.csproj
@@ -47,7 +53,6 @@ jobs:
           --
           --report-trx
           --results-directory ${{ github.workspace }}/artifacts/test-results
-          --maximum-parallel-tests 1
 
       - name: Publish test report
         uses: dorny/test-reporter@v3
