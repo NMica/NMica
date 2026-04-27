@@ -21,6 +21,7 @@
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageProjectUrl>http://github.com/NMica/NMica</PackageProjectUrl>
         <RepositoryUrl>http://github.com/NMica/NMica</RepositoryUrl>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
         <Copyright>Copyright 2026</Copyright>
 
         <!-- Root of the pinned dotnet/sdk submodule checkout. We source-link files from inside
@@ -93,6 +94,7 @@
     <!-- Consumer-side MSBuild integration. NuGet auto-imports build/<PackageId>.{props,targets}. -->
     <ItemGroup>
         <None Include="build\**\*" Pack="true" PackagePath="build\" />
+        <None Include="..\..\README.md" Pack="true" PackagePath="\" />
     </ItemGroup>
 
 </Project>
