@@ -1,9 +1,9 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
-using DotNet.Testcontainers.Images;
 
 namespace NMica.Tests.Utils
 {
@@ -41,16 +41,44 @@ namespace NMica.Tests.Utils
             return new DockerResult(result.ExitCode ?? -1, result.Stdout ?? string.Empty, result.Stderr ?? string.Empty);
         }
 
-        public static async Task<IFutureDockerImage> BuildImageAsync(string contextDir, string dockerfileRelative, string tag)
+        /// <summary>
+        /// Shells out to the <c>docker</c> CLI rather than going through Testcontainers'
+        /// Engine-API <c>/build</c> endpoint. On GHA's Docker 28 + BuildKit, the daemon-side
+        /// build path hits a layer-export race ("failed to get layer sha256:... layer does
+        /// not exist") on multi-stage Dockerfiles. Using the CLI lets us route through
+        /// <c>buildx</c>'s <c>docker-container</c> driver (set up in CI), which runs an
+        /// isolated BuildKit instance and sidesteps the daemon bug.
+        /// </summary>
+        public static async Task BuildImageAsync(string contextDir, string dockerfileRelative, string tag)
         {
-            var image = new ImageFromDockerfileBuilder()
-                .WithDockerfileDirectory(contextDir)
-                .WithDockerfile(dockerfileRelative.Replace("\\", "/"))
-                .WithName(tag)
-                .WithCleanUp(true)
-                .Build();
-            await image.CreateAsync();
-            return image;
+            var dockerfilePath = Path.Combine(contextDir, dockerfileRelative.Replace("\\", "/"));
+            var psi = new ProcessStartInfo("docker")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                WorkingDirectory = contextDir,
+            };
+            psi.ArgumentList.Add("build");
+            psi.ArgumentList.Add("--load");
+            psi.ArgumentList.Add("-t");
+            psi.ArgumentList.Add(tag);
+            psi.ArgumentList.Add("-f");
+            psi.ArgumentList.Add(dockerfilePath);
+            psi.ArgumentList.Add(contextDir);
+
+            using var process = Process.Start(psi)!;
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            var stdout = await stdoutTask;
+            var stderr = await stderrTask;
+
+            if (process.ExitCode != 0)
+            {
+                throw new InvalidOperationException(
+                    $"docker build failed (exit {process.ExitCode}) for {dockerfilePath}\nstdout:\n{stdout}\nstderr:\n{stderr}");
+            }
         }
 
         public static async Task<DockerResult> RunImageOnceAsync(string imageTag, TextWriter output)

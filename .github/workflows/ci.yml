@@ -32,17 +32,17 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      # GHA's ubuntu-24.04 runner ships Docker 28 with the containerd image store
-      # (a.k.a. containerd snapshotter) as the default backend. Its exporter races
-      # against containerd GC on multi-layer builds, producing
-      #   "failed to export image: failed to get layer sha256:... layer does not exist"
-      # even on a single, serial build. Disabling the snapshotter drops Docker back
-      # to the classic overlay2 image store, which doesn't have the race.
-      # (`features.buildkit: false` is a deprecated no-op key — don't be tempted.)
-      - name: Disable containerd snapshotter
-        run: |
-          echo '{ "features": { "containerd-snapshotter": false } }' | sudo tee /etc/docker/daemon.json
-          sudo systemctl restart docker
+      # GHA's Docker 28 daemon-side BuildKit hits a layer-export race on multi-stage
+      # builds ("failed to export image: failed to get layer sha256:... layer does not
+      # exist"). The fix is to route the test suite's `docker build` calls through
+      # buildx's docker-container driver, which runs an isolated BuildKit instance in
+      # its own container — that path is unaffected. `--use` makes it the default
+      # builder so plain `docker build` (which DockerHelper shells out to) picks it up.
+      - name: Set up buildx (docker-container driver)
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+          install: true
 
       # Docker comes pre-installed on ubuntu-latest. Tests use Testcontainers to spin up
       # mcr.microsoft.com/dotnet/sdk:10.0 containers for integration scenarios.
