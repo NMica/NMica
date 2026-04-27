@@ -270,3 +270,4 @@ __pycache__/
 *.pyc
 
 .nuke/temp/
+.claude/
