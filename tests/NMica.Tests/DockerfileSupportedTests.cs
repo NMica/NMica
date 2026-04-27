@@ -11,12 +11,6 @@ using TUnit.Core;
 
 namespace NMica.Tests
 {
-    /// <summary>
-    /// Each case here invokes <c>docker build</c> against the Dockerfile NMica generated.
-    /// Running them in parallel against the same Docker daemon hits a race in the daemon's
-    /// layer-export path on GHA-style containerd setups — serialising avoids the flake.
-    /// </summary>
-    [NotInParallel(nameof(DockerfileSupportedTests))]
     public class DockerfileSupportedTests : BaseTests
     {
         [Test]

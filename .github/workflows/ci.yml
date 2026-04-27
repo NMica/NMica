@@ -32,20 +32,14 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      # Disable BuildKit at the daemon level. The GHA runner's containerd-snapshotter
-      # builder races on cross-stage layer references when multiple docker-build calls
-      # run concurrently (TUnit fans tests out by default), producing flaky
-      # "failed to get layer sha256:... layer does not exist" errors. The classic
-      # builder serialises layer access and sidesteps the issue. (DOCKER_BUILDKIT=0 on
-      # the env only affects the docker CLI; Testcontainers talks directly to the
-      # daemon and ignores it — daemon.json is the only knob that takes effect.)
-      - name: Disable Docker BuildKit
-        run: |
-          echo '{ "features": { "buildkit": false } }' | sudo tee /etc/docker/daemon.json
-          sudo systemctl restart docker
-
       # Docker comes pre-installed on ubuntu-latest. Tests use Testcontainers to spin up
       # mcr.microsoft.com/dotnet/sdk:10.0 containers for integration scenarios.
+      #
+      # --maximum-parallel-tests 1 forces serial execution. The GHA runner's Docker
+      # daemon uses the containerd image store (default since Docker 24+), which races
+      # on layer references when multiple `docker build` calls run concurrently against
+      # the same daemon ("failed to get layer sha256:... layer does not exist"). Local
+      # dev keeps full parallelism — this flag only applies on CI.
       - name: Build & test
         run: >
           dotnet test --project tests/NMica.Tests/NMica.Tests.csproj
@@ -53,6 +47,7 @@ jobs:
           --
           --report-trx
           --results-directory ${{ github.workspace }}/artifacts/test-results
+          --maximum-parallel-tests 1
 
       - name: Publish test report
         uses: dorny/test-reporter@v3
