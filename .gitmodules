@@ -2,4 +2,3 @@
 	path = external/dotnet-sdk
 	url = https://github.com/dotnet/sdk.git
 	shallow = true
-	update = none

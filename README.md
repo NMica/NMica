@@ -1,5 +1,8 @@
 # NMica
 
+[![CI](https://github.com/NMica/NMica/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/NMica/NMica/actions/workflows/ci.yml)
+[![NuGet](https://img.shields.io/nuget/v/NMica.svg)](https://www.nuget.org/packages/NMica)
+
 **Multi-layer, cache-optimized container images for .NET — out of the box with `dotnet publish /t:PublishContainer`.**
 
 The .NET SDK's `PublishContainer` target is convenient but produces a single Docker layer containing your entire `dotnet publish` output — code + every NuGet DLL + every project reference. One line of code change invalidates the whole layer: tens to hundreds of MB of unchanged dependency DLLs get re-hashed, re-pushed to your registry, re-pulled by CI and prod, and re-stored on every host.
