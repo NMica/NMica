@@ -55,7 +55,7 @@
         <!-- Pin away from the vulnerable 10.0.1 that NuGet.Packaging 7.3.1 transitively pulls
              in (GHSA-w3x6-4m5h-cxqf / GHSA-37gx-xxp4-5rgx). Compile-time only — at runtime the
              BCL ships this. -->
-        <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.7" PrivateAssets="all" ExcludeAssets="runtime" />
+        <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.10" PrivateAssets="all" ExcludeAssets="runtime" />
 
         <!-- Computes NuGet package version from version.json + git history at build time.
              Produces clean versions on release-branch / release-tag builds (see
